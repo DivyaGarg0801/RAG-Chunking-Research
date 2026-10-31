@@ -1,0 +1,41 @@
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and package artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Jupyter-generated checkpoint folders
+.ipynb_checkpoints/
+
+# VS Code user-specific workspace files and generated browse database
+.vscode/*.code-workspace
+.vscode/.browse.VC.db
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Original research source document (keep local; check redistribution rights)
+data/raw/computer_networks_lab_manual.pdf
+
+# Generated fixed-size chunking preview data
+experiments/results/fixed_size_preview/
