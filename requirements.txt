@@ -1,2 +1,7 @@
 PyMuPDF==2.0
+<<<<<<< HEAD
+requests==2.32.5
+sentence-transformers==5.2.0
+=======
 sentence-transformers>=5.0.0,<6.0.0
+>>>>>>> origin/master
