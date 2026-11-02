@@ -21,13 +21,35 @@ The planned pipeline is to extract text and page information from source manuals
 ## Current implementation status
 
 The project currently includes page-level PDF text extraction, conservative text
-preprocessing, fixed-size and recursive chunking, and a local sentence-embedding
-semantic chunker. The chunking tests use synthetic text and fake embedding
-vectors; they do not download model weights.
+preprocessing, fixed-size and recursive chunking, a local sentence-embedding
+semantic chunker, and a structure-aware chunking pipeline.
 
 The fixed-size preview was run on the local laboratory manual. A semantic
-preview script is available, but it has not been run on the manual. Its first
-real run requires the local Sentence Transformers model weights and processes
-the full PDF. Structure-based and logical-unit chunking, retrieval, evaluation
-queries, relevance judgements, and retrieval results remain to be implemented.
-No retrieval-quality conclusions have been made.
+preview script is available, and the structure-based preview is now implemented
+for real-manual runs without changing the semantic or logical-unit milestone
+work. Retrieval, evaluation queries, relevance judgements, and retrieval
+results remain to be implemented. No retrieval-quality conclusions have been
+made.
+
+## Structure-based chunking
+
+The structure-based chunker uses a conservative line-by-line heading detector
+that recognises common lab-manual headings such as Experiment, Aim, Theory,
+Procedure, Program, Output, and Result while avoiding ordinary paragraph text.
+It preserves exact source text by concatenating generated chunks without
+silently discarding or modifying characters. If a section exceeds the configured
+maximum size, it is split at paragraph or line boundaries before falling back to
+character-level splitting.
+
+The sequence remains intentionally separate from logical-unit-based chunking:
+structure-based chunking groups headings and subsections, while logical-unit
+chunking will preserve an entire experiment as one unit in a later milestone.
+
+### Real preview result
+
+The structure preview was executed on the local laboratory manual with a maximum
+chunk size of 1500 characters. It processed 87 pages and produced 80 chunks from
+78,531 cleaned characters. The average chunk length was 981.64 characters, the
+minimum length was 14, and the maximum was 1495. The chunker reconstructed the
+source text exactly, and the preview outputs were saved under
+`experiments/results/structure_preview/`.

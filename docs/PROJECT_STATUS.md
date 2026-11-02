@@ -2,11 +2,51 @@
 
 ## Current milestone
 
-Milestone 9: Semantic chunking, real-document diagnostics, and controlled
-comparison of both semantic input segmenters are complete. Retrieval evaluation
-is pending; the default similarity threshold remains unchanged.
+Structure-based chunking is implemented and validated on the
+`feature/structure-based-chunking` branch. The milestone remains local and
+uncommitted, as required.
 
 ## Completed
+
+- Repaired `requirements.txt` by removing the unresolved merge markers and
+  keeping the exact direct dependency pins required for the project baseline:
+  `PyMuPDF==2.0`, `requests==2.32.5`, and `sentence-transformers==5.2.0`.
+- Verified the active interpreter in the existing project `.venv` before any
+  installation step; it is Python 3.12.3, not a recreated environment.
+- Installed the pinned dependencies with
+  `\.\.venv\Scripts\python.exe -m pip install --no-cache-dir -r requirements.txt`
+  and confirmed it completed successfully.
+- Verified the runtime imports and versions using the project `.venv`:
+  `PyMuPDF 2.0`, `requests 2.32.5`, and `sentence_transformers 5.2.0`.
+- Ran the complete project test suite with
+  `\.\.venv\Scripts\python.exe -m unittest discover -s tests -v` and it
+  completed successfully with exit code 0.
+- Added the structure-aware chunking implementation in `src/chunking/structure.py`.
+- Added synthetic tests in `tests/test_structure.py` covering heading detection,
+  exact text preservation, multi-level structure, oversized sections, and
+  unheaded fallback text.
+- Added `scripts/preview_structure.py` to run the structure-based preview on the
+  lab manual and save chunk metadata and summary outputs.
+- Kept the repo on the local feature branch `feature/structure-based-chunking`,
+  left all changes uncommitted, and did not stage, push, merge, or create a PR.
+- Ran the structure preview and recorded actual manual statistics for the local
+  laboratory manual.
+
+## Structure-based chunking notes
+
+- The implementation uses conservative heading recognition instead of treating
+  every shared word such as "Aim" or "Result" as a heading.
+- A heading must match a strict line-level pattern involving numbering,
+  punctuation, line length, and context before it is treated as a section.
+- Every generated chunk is meant to reconstruct the original source exactly by
+  joining chunk texts without dropping whitespace or blank lines.
+- The chunker preserves section hierarchy using metadata such as heading,
+  heading level, and parent heading, but it does not merge whole experiments:
+  that behaviour is reserved for the later logical-unit-based milestone.
+- The real preview run on the 87-page manual produced 80 chunks from 78,531
+  cleaned characters with a 1500-character maximum chunk size. The average chunk
+  length was 981.64 characters, with a minimum of 14 and a maximum of 1495.
+  Exact reconstruction was confirmed during the preview run.
 
 - Confirmed that Python 3.13.14 is available.
 - Created the project `.venv` virtual environment.
