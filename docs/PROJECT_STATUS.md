@@ -2,9 +2,54 @@
 
 ## Current milestone
 
-Structure-based chunking is implemented and validated on the
-`feature/structure-based-chunking` branch. The milestone remains local and
-uncommitted, as required.
+Refined structure-aware chunking is implemented and validated on the
+`feature/structure-based-chunking` branch. The changes remain local and
+uncommitted.
+
+## Structure heading hierarchy refinement (2026-11-03)
+
+- Heading recognition now accepts `Experiment: 1`, `Experiment 1`,
+  `Experiment.2:`, `Experiment1:`, and the OCR form `Experimet-10`.
+- The classifier uses heading syntax and active document context: outer
+  experiment headings reset the hierarchy, nested experiment titles are level
+  2, and their subsections are level 3. Subsections under an outer experiment
+  remain level 2 and inherit that experiment as their parent.
+- Every heading occurrence has a stable occurrence ID shared by its split
+  chunks. The preview summary reports unique headings, heading occurrences,
+  occurrence and chunk counts by heading, unheaded chunks, and chunk-size
+  statistics separately.
+- Chunk text is still concatenated exactly to reconstruct the cleaned source;
+  no overlap was introduced and the maximum remains 1,500 characters.
+- Regression tests cover heading variants, OCR, nested hierarchy and resets,
+  repeated subsections, split metadata, occurrence statistics, size limits,
+  and exact reconstruction.
+- The complete requested command,
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, passed all 153
+  tests.
+- Regenerated the structure preview from the local 87-page
+  `computer_networks_lab_manual.pdf`; all three generated outputs were
+  inspected and published under `experiments/results/structure_preview/`.
+- The pre-change baseline was replayed from `HEAD` with the same PDF,
+  extraction, cleaning, and 1,500-character limit. The older saved preview
+  summary reported 80 chunks, but the committed pre-change code reproducibly
+  generated 82; the before/after comparison below therefore uses the replayed
+  baseline rather than that stale summary.
+
+| Statistic | Before (replayed `HEAD`) | After |
+|---|---:|---:|
+| Extracted pages | 87 | 87 |
+| Cleaned characters | 78,531 | 78,531 |
+| Total chunks | 82 | 82 |
+| Unique detected headings (case-insensitive) | 37 | 37 |
+| Heading occurrences | 50 | 50 |
+| Unheaded chunks | 4 | 4 |
+| Average chunk size | 957.70 | 957.70 |
+| Minimum chunk size | 14 | 14 |
+| Maximum chunk size | 1,495 | 1,495 |
+
+Chunk counts and sizes did not change: the refinement corrected hierarchy
+metadata, not text boundaries. The generated summary now records the heading
+statistics that were previously unavailable.
 
 ## Completed
 
@@ -43,10 +88,11 @@ uncommitted, as required.
 - The chunker preserves section hierarchy using metadata such as heading,
   heading level, and parent heading, but it does not merge whole experiments:
   that behaviour is reserved for the later logical-unit-based milestone.
-- The real preview run on the 87-page manual produced 80 chunks from 78,531
-  cleaned characters with a 1500-character maximum chunk size. The average chunk
-  length was 981.64 characters, with a minimum of 14 and a maximum of 1495.
-  Exact reconstruction was confirmed during the preview run.
+- The original saved preview summary reported 80 chunks from 78,531 cleaned
+  characters, with an average length of 981.64, a minimum of 14, and a maximum
+  of 1495. This did not match a replay of the committed pre-change code; see
+  the structure refinement section above for the verified before/after
+  comparison and regenerated output.
 
 - Confirmed that Python 3.13.14 is available.
 - Created the project `.venv` virtual environment.

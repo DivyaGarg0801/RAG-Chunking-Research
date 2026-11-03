@@ -39,54 +39,67 @@ class StructureChunkTests(unittest.TestCase):
 
     def test_detects_experiment_heading_ocr_and_punctuation_variants(self) -> None:
         headings = (
-            "Experiment 1: Title",
-            "Experiment-1",
-            "Experiment.2: Title",
-            "Experiment.3: Title",
-            "Experiment1: Title",
-            "Experiment 3: Understanding AODV",
-            "Experiment 10: HTTP and DNS",
-            "Experiment3: Observation of packets in a LAN network",
-            "Experiment1: Introduction to Wireshark",
+            "Experiment: 1",
+            "Experiment 1",
+            "Experiment.2:",
+            "Experiment1:",
             "Experimet-10",
         )
-        text = "".join(f"{heading}\n" for heading in headings)
+        for heading in headings:
+            with self.subTest(heading=heading):
+                chunks = structure_chunk(f"{heading}\n")
+                self.assertEqual(len(chunks), 1)
+                self.assertEqual(chunks[0].heading_level, 1)
+                self.assertIsNone(chunks[0].parent_heading)
+                self.assertEqual(chunks[0].section_path, (chunks[0].heading,))
+                self.assertEqual(chunks[0].text, f"{heading}\n")
+
+    def test_nested_experiment_titles_and_their_subsections_use_context(self) -> None:
+        text = (
+            "Experiment: 1\n"
+            "Experiment 1: Packet loss\n"
+            "Aim: Measure packet loss.\n"
+            "Procedure: Run the test.\n"
+            "Experiment.2: Throughput\n"
+            "Result: Throughput increased.\n"
+        )
 
         chunks = structure_chunk(text)
 
         self.assertEqual(
-            [chunk.heading for chunk in chunks],
+            [chunk.heading_level for chunk in chunks],
+            [1, 2, 3, 3, 2, 3],
+        )
+        self.assertEqual(
+            [chunk.parent_heading for chunk in chunks],
             [
-                "Experiment 1: Title",
+                None,
                 "Experiment 1",
-                "Experiment 2: Title",
-                "Experiment 3: Title",
-                "Experiment 1: Title",
-                "Experiment 3: Understanding AODV",
-                "Experiment 10: HTTP and DNS",
-                "Experiment 3: Observation of packets in a LAN network",
-                "Experiment 1: Introduction to Wireshark",
-                "Experiment 10",
+                "Experiment 1: Packet loss",
+                "Experiment 1: Packet loss",
+                "Experiment 1",
+                "Experiment 2: Throughput",
             ],
         )
-        self.assertTrue(all(chunk.heading_level == 1 for chunk in chunks))
-        self.assertTrue(all(chunk.parent_heading is None for chunk in chunks))
         self.assertEqual(
             [chunk.section_path for chunk in chunks],
-            [(chunk.heading,) for chunk in chunks],
+            [
+                ("Experiment 1",),
+                ("Experiment 1", "Experiment 1: Packet loss"),
+                ("Experiment 1", "Experiment 1: Packet loss", "Aim"),
+                ("Experiment 1", "Experiment 1: Packet loss", "Procedure"),
+                ("Experiment 1", "Experiment 2: Throughput"),
+                ("Experiment 1", "Experiment 2: Throughput", "Result"),
+            ],
         )
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
-        self.assertEqual(
-            [chunk.chunk_index for chunk in chunks],
-            list(range(1, len(chunks) + 1)),
-        )
 
     def test_experiment_heading_starts_new_hierarchy(self) -> None:
         text = (
             "Experiment 1: Queueing\n"
             "Aim: Measure delay\n"
             "Procedure: Run the test\n"
-            "Experiment.2: Performance of RED\n"
+            "Experiment: 2\n"
             "Aim: Measure packet loss\n"
             "Result: RED reduces queue drops\n"
         )
@@ -99,7 +112,7 @@ class StructureChunkTests(unittest.TestCase):
                 "Experiment 1: Queueing",
                 "Aim",
                 "Procedure",
-                "Experiment 2: Performance of RED",
+                "Experiment 2",
                 "Aim",
                 "Result",
             ],
@@ -111,8 +124,8 @@ class StructureChunkTests(unittest.TestCase):
                 "Experiment 1: Queueing",
                 "Experiment 1: Queueing",
                 None,
-                "Experiment 2: Performance of RED",
-                "Experiment 2: Performance of RED",
+                "Experiment 2",
+                "Experiment 2",
             ],
         )
         self.assertEqual(
@@ -121,9 +134,9 @@ class StructureChunkTests(unittest.TestCase):
                 ("Experiment 1: Queueing",),
                 ("Experiment 1: Queueing", "Aim"),
                 ("Experiment 1: Queueing", "Procedure"),
-                ("Experiment 2: Performance of RED",),
-                ("Experiment 2: Performance of RED", "Aim"),
-                ("Experiment 2: Performance of RED", "Result"),
+                ("Experiment 2",),
+                ("Experiment 2", "Aim"),
+                ("Experiment 2", "Result"),
             ],
         )
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
@@ -266,11 +279,36 @@ class StructureChunkTests(unittest.TestCase):
         self.assertEqual(chunks[2].parent_heading, "Experiment 1: Queueing")
         self.assertEqual(chunks[3].parent_heading, "Experiment 1: Queueing")
 
+    def test_repeated_aim_procedure_and_result_keep_the_nearest_experiment_parent(
+        self,
+    ) -> None:
+        text = (
+            "Experiment: 1\n"
+            "Aim: First aim.\n"
+            "Procedure: First procedure.\n"
+            "Result: First result.\n"
+            "Aim: Second aim.\n"
+            "Procedure: Second procedure.\n"
+            "Result: Second result.\n"
+        )
+
+        chunks = structure_chunk(text)
+
+        self.assertEqual(
+            [chunk.parent_heading for chunk in chunks[1:]],
+            ["Experiment 1"] * 6,
+        )
+        self.assertEqual(
+            [chunk.section_path for chunk in chunks[1:]],
+            [("Experiment 1", chunk.heading) for chunk in chunks[1:]],
+        )
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
     def test_section_path_and_heading_level_follow_hierarchy(self) -> None:
         text = (
             "Experiment 1: Queueing\n"
             "Aim: Measure delay.\n"
-            "Experiment 2: Routing\n"
+            "Experiment: 2\n"
             "Result: Routes converge.\n"
         )
 
@@ -285,8 +323,8 @@ class StructureChunkTests(unittest.TestCase):
             [
                 ("Experiment 1: Queueing",),
                 ("Experiment 1: Queueing", "Aim"),
-                ("Experiment 2: Routing",),
-                ("Experiment 2: Routing", "Result"),
+                ("Experiment 2",),
+                ("Experiment 2", "Result"),
             ],
         )
 
@@ -295,7 +333,7 @@ class StructureChunkTests(unittest.TestCase):
             "Experiment 1: Queueing\n"
             "Aim: Measure delay.\n"
             "Aim: Measure throughput.\n"
-            "Experiment 2: Routing\n"
+            "Experiment: 2\n"
             "Aim: Measure packet loss.\n"
             "Aim: Measure route convergence.\n"
         )
@@ -308,7 +346,7 @@ class StructureChunkTests(unittest.TestCase):
                 "Experiment 1: Queueing",
                 "Aim",
                 "Aim",
-                "Experiment 2: Routing",
+                "Experiment 2",
                 "Aim",
                 "Aim",
             ],
@@ -320,8 +358,8 @@ class StructureChunkTests(unittest.TestCase):
                 "Experiment 1: Queueing",
                 "Experiment 1: Queueing",
                 None,
-                "Experiment 2: Routing",
-                "Experiment 2: Routing",
+                "Experiment 2",
+                "Experiment 2",
             ],
         )
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
@@ -330,7 +368,7 @@ class StructureChunkTests(unittest.TestCase):
         text = (
             "Experiment 1: Queueing\n"
             "Aim: Measure delay.\n"
-            "Experiment 2: Routing\n"
+            "Experiment: 2\n"
             "Aim: Measure throughput.\n"
         )
 
@@ -338,8 +376,8 @@ class StructureChunkTests(unittest.TestCase):
 
         self.assertEqual(chunks[0].heading, "Experiment 1: Queueing")
         self.assertEqual(chunks[1].parent_heading, "Experiment 1: Queueing")
-        self.assertEqual(chunks[2].heading, "Experiment 2: Routing")
-        self.assertEqual(chunks[3].parent_heading, "Experiment 2: Routing")
+        self.assertEqual(chunks[2].heading, "Experiment 2")
+        self.assertEqual(chunks[3].parent_heading, "Experiment 2")
 
     def test_consecutive_headings_preserve_all_heading_text(self) -> None:
         text = "Aim: Measure delay.\nResult: Stable.\n"
@@ -424,12 +462,14 @@ class StructureChunkTests(unittest.TestCase):
                     chunk.heading_level,
                     chunk.parent_heading,
                     chunk.section_path,
+                    chunk.heading_occurrence,
                 )
                 == (
                     aim_chunks[0].heading,
                     aim_chunks[0].heading_level,
                     aim_chunks[0].parent_heading,
                     aim_chunks[0].section_path,
+                    aim_chunks[0].heading_occurrence,
                 )
                 for chunk in aim_chunks
             )
@@ -571,7 +611,7 @@ class StructurePreviewTests(unittest.TestCase):
                 chunk_index=1,
                 text="Text",
                 heading="Aim",
-                heading_level=3,
+                heading_level=4,
                 parent_heading=None,
                 section_path=("Aim",),
             ),
@@ -582,6 +622,14 @@ class StructurePreviewTests(unittest.TestCase):
                 heading_level=2,
                 parent_heading=None,
                 section_path=(),
+            ),
+            StructureChunk(
+                chunk_index=1,
+                text="Text",
+                heading="Aim",
+                heading_level=3,
+                parent_heading="Experiment",
+                section_path=("Wrong experiment", "Aim"),
             ),
         )
 
@@ -707,6 +755,7 @@ class StructurePreviewTests(unittest.TestCase):
                     "heading_level",
                     "parent_heading",
                     "section_path",
+                    "heading_occurrence",
                     "character_count",
                     "text",
                 },
@@ -716,6 +765,85 @@ class StructurePreviewTests(unittest.TestCase):
                 ["Experiment 1: Demo"],
             )
             self.assertEqual(metadata[0]["heading_level"], 1)
+            self.assertEqual(summary["number_of_chunks"], 3)
+            self.assertEqual(summary["number_of_unique_headings"], 3)
+            self.assertEqual(summary["number_of_heading_occurrences"], 3)
+            self.assertEqual(summary["number_of_unheaded_chunks"], 0)
+            self.assertEqual(
+                summary["heading_occurrence_count_by_heading"],
+                {"Experiment 1: Demo": 1, "Aim": 1, "Result": 1},
+            )
+            self.assertEqual(
+                summary["chunk_size_statistics_characters"],
+                {
+                    "average": len(text) / 3,
+                    "minimum": len("Result: Stable.\n"),
+                    "maximum": len("Aim: Measure output.\n"),
+                },
+            )
+
+    def test_preview_counts_heading_occurrences_separately_from_split_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source_pdf = root / "manual.pdf"
+            source_pdf.touch()
+            output_directory = root / "structure_preview"
+            text = (
+                "Experiment: 1\n"
+                "Aim: measure the network.\n"
+                + ("Network details follow.\n" * 8)
+                + "Aim: Confirm the result.\n"
+            )
+            extraction = SimpleNamespace(
+                pages=[SimpleNamespace(text=text)],
+                empty_pages=(),
+            )
+
+            with (
+                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
+                patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
+                patch.object(
+                    preview_structure,
+                    "extract_pdf_pages",
+                    return_value=extraction,
+                ),
+                patch.object(
+                    preview_structure,
+                    "clean_text",
+                    side_effect=lambda value: value,
+                ),
+                patch.object(preview_structure, "MAX_CHUNK_SIZE", 30),
+            ):
+                preview_structure.main()
+
+            summary = json.loads(
+                (output_directory / "summary.json").read_text(encoding="utf-8")
+            )
+            metadata = json.loads(
+                (output_directory / "chunk_metadata.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            aim_chunks = [item for item in metadata if item["heading"] == "Aim"]
+
+            self.assertGreater(len(aim_chunks), 2)
+            self.assertEqual(summary["number_of_heading_occurrences"], 3)
+            self.assertEqual(
+                summary["heading_occurrence_count_by_heading"]["Aim"],
+                2,
+            )
+            self.assertEqual(
+                len({item["heading_occurrence"] for item in aim_chunks}),
+                2,
+            )
+            self.assertEqual(
+                summary["chunk_count_by_heading"]["Aim"],
+                len(aim_chunks),
+            )
+            self.assertTrue(
+                all(item["character_count"] <= 30 for item in metadata)
+            )
+            self.assertEqual("".join(item["text"] for item in metadata), text)
 
     def test_existing_outputs_are_not_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

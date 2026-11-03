@@ -35,15 +35,53 @@ def _validate_chunks(
         raise RuntimeError("One or more generated chunks are empty.")
 
     for chunk in chunks:
-        if chunk.heading_level not in (0, 1, 2):
+        if chunk.heading_level not in (0, 1, 2, 3):
             raise RuntimeError("A generated chunk has an invalid heading level.")
         if chunk.heading is None and chunk.heading_level != 0:
             raise RuntimeError(
                 "An unheaded chunk must have heading level 0."
             )
+        if chunk.heading is not None and chunk.heading_level == 0:
+            raise RuntimeError("A headed chunk must have a positive heading level.")
         if chunk.heading is not None and not chunk.section_path:
             raise RuntimeError(
                 "A headed chunk must have a non-empty section path."
+            )
+        if chunk.heading is not None and chunk.section_path[-1] != chunk.heading:
+            raise RuntimeError("A headed chunk has an inconsistent section path.")
+        if chunk.heading is not None:
+            if chunk.parent_heading is None and len(chunk.section_path) != 1:
+                raise RuntimeError(
+                    "A root heading must have a one-item section path."
+                )
+            if chunk.parent_heading is not None and (
+                len(chunk.section_path) != chunk.heading_level
+                or len(chunk.section_path) < 2
+                or chunk.section_path[-2] != chunk.parent_heading
+            ):
+                raise RuntimeError(
+                    "A headed chunk has an inconsistent parent and section path."
+                )
+
+    occurrence_metadata: dict[
+        int, tuple[str | None, int, str | None, tuple[str, ...]]
+    ] = {}
+    for chunk in chunks:
+        if chunk.heading_occurrence is None:
+            continue
+        metadata = (
+            chunk.heading,
+            chunk.heading_level,
+            chunk.parent_heading,
+            chunk.section_path,
+        )
+        previous_metadata = occurrence_metadata.setdefault(
+            chunk.heading_occurrence,
+            metadata,
+        )
+        if previous_metadata != metadata:
+            raise RuntimeError(
+                "Chunks from one heading occurrence have inconsistent metadata."
             )
 
     reconstructed_text = "".join(chunk.text for chunk in chunks)
@@ -92,13 +130,30 @@ def main() -> None:
     chunks = structure_chunk(combined_text, max_chunk_size=MAX_CHUNK_SIZE)
     _validate_chunks(chunks, combined_text, MAX_CHUNK_SIZE)
 
-    heading_counts: dict[str, int] = {}
+    chunk_counts_by_heading: dict[str, int] = {}
+    heading_by_occurrence: dict[int, str] = {}
+    unheaded_chunk_count = 0
     for chunk in chunks:
-        heading = chunk.heading or "(unheaded)"
-        heading_counts[heading] = heading_counts.get(heading, 0) + 1
+        if chunk.heading is None:
+            unheaded_chunk_count += 1
+            continue
+        chunk_counts_by_heading[chunk.heading] = (
+            chunk_counts_by_heading.get(chunk.heading, 0) + 1
+        )
+        if chunk.heading_occurrence is not None:
+            heading_by_occurrence[chunk.heading_occurrence] = chunk.heading
+
+    occurrence_counts_by_heading: dict[str, int] = {}
+    for heading in heading_by_occurrence.values():
+        occurrence_counts_by_heading[heading] = (
+            occurrence_counts_by_heading.get(heading, 0) + 1
+        )
 
     total_characters = sum(len(chunk.text) for chunk in chunks)
     chunk_lengths = [len(chunk.text) for chunk in chunks]
+    unique_heading_keys = {
+        chunk.heading.casefold() for chunk in chunks if chunk.heading is not None
+    }
     summary = {
         "source_pdf_filename": SOURCE_PDF.name,
         "number_of_pages_extracted": len(extraction.pages),
@@ -108,12 +163,21 @@ def main() -> None:
         "structure_heading_detection": "conservative_line_based",
         "maximum_chunk_size_characters": MAX_CHUNK_SIZE,
         "number_of_chunks": len(chunks),
+        "number_of_unique_headings": len(unique_heading_keys),
+        "number_of_heading_occurrences": len(heading_by_occurrence),
+        "heading_occurrence_count_by_heading": occurrence_counts_by_heading,
+        "number_of_unheaded_chunks": unheaded_chunk_count,
+        "chunk_size_statistics_characters": {
+            "average": total_characters / len(chunks) if chunks else 0,
+            "minimum": min(chunk_lengths, default=None),
+            "maximum": max(chunk_lengths, default=None),
+        },
         "average_chunk_length_characters": (
             total_characters / len(chunks) if chunks else 0
         ),
         "minimum_chunk_length_characters": min(chunk_lengths, default=None),
         "maximum_chunk_length_characters": max(chunk_lengths, default=None),
-        "chunk_count_by_heading": heading_counts,
+        "chunk_count_by_heading": chunk_counts_by_heading,
         "text_preserved_exactly": True,
         "page_separator": PAGE_SEPARATOR,
     }
@@ -125,6 +189,7 @@ def main() -> None:
             "heading_level": chunk.heading_level,
             "parent_heading": chunk.parent_heading,
             "section_path": list(chunk.section_path),
+            "heading_occurrence": chunk.heading_occurrence,
             "character_count": len(chunk.text),
             "text": chunk.text,
         }
@@ -168,6 +233,9 @@ def main() -> None:
     else:
         print("Empty pages: none")
     print(f"Structure chunks created: {len(chunks)}")
+    print(f"Unique detected headings: {summary['number_of_unique_headings']}")
+    print(f"Heading occurrences: {summary['number_of_heading_occurrences']}")
+    print(f"Unheaded chunks: {unheaded_chunk_count}")
     print(f"Average chunk length: {summary['average_chunk_length_characters']:.2f}")
     print(f"Output directory: {OUTPUT_DIRECTORY}")
 

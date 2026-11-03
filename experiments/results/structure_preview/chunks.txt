@@ -178,7 +178,7 @@ records returned by a DNS server.
 6
 
 
-CHUNK 5 (Experiment: 1)
+CHUNK 5 (Experiment 1)
 Experiment-1 
 
 
@@ -375,7 +375,7 @@ http://www.webupd8.org/2014/02/how-to-test-internet-speed-via-command.html
 
 
 
-CHUNK 12 (Experiment: 2)
+CHUNK 12 (Experiment 2)
 Experiment-2 
 
 
@@ -634,7 +634,7 @@ In a similar fashion, remove all the rules in the OUTPUT chain.
 25
 
 
-CHUNK 21 (Experiment: 3)
+CHUNK 21 (Experiment 3)
 Experiment-3 
 
 
@@ -709,7 +709,7 @@ network. This leads to drop in packets.
 
 
 
-CHUNK 25 (Experiment 1: Compare the performance of DropTail and RED queue techniques)
+CHUNK 25 (Experiment 2: Performance of RED for different link bandwidths and queue lengths)
 Experiment.2: Performance of RED for different link bandwidths and queue lengths 
 
 For a given network, the following parameters play a critical role in network congestion. 
@@ -743,7 +743,7 @@ the above figure), there is a huge drop in packets.
 6. Run redqueue executable using the following command ./waf run RedQueueStats vis 
 
 
-CHUNK 26 (Experiment 1: Compare the performance of DropTail and RED queue techniques)
+CHUNK 26 (Experiment 2: Performance of RED for different link bandwidths and queue lengths)
  7. Simulator window will be opened on running the above command. Click “Simulate” button.  
 8. Wait for the simulation to complete. Once the simulation is completed, close the window.  
 9. The terminal will show the total no. of dropped packets. The following information is displayed. 
@@ -768,7 +768,7 @@ Routing is the process of selecting best paths in a network. In the past, the te
 mean forwarding network traffic among networks. However, this latter function is much better described as 
 
 
-CHUNK 27 (Experiment 1: Compare the performance of DropTail and RED queue techniques)
+CHUNK 27 (Experiment 2: Performance of RED for different link bandwidths and queue lengths)
 simply forwarding. Routing is performed for many kinds of networks, including the telephone network (circuit 
 switching), electronic data networks (such as the Internet), and transportation networks. 
 In packet switching networks, routing directs packet forwarding (the transit of logically addressed network 
@@ -784,10 +784,10 @@ connect to. Each node then independently assembles this information into a map. 
 independently determines the least cost path from itself to every other node using a standard shortest paths 
 algorithm such as Dijkstra's algorithm. 
 
+
+
+CHUNK 28 (Experiment 3: Dynamic Global Routing)
 Experiment.3: Dynamic Global Routing 
-
-
-CHUNK 28 (Experiment 1: Compare the performance of DropTail and RED queue techniques)
 We will examine global routing in a mixed environment with Point to Point links and CSMA/CD channel. 
 Copy the dynamic_global_routing.cc file from examples into scratch folder. 
 The following topology is created: 
@@ -810,10 +810,10 @@ n1n6?
 from n1's perspective). Observe the change of path of the packets (NOTE: observe the visualization as well as 
 the corresponding pcap files) 
  9. At time 8s, the interface comes up. The older path is restored.  
+
+
+CHUNK 29 (Experiment 3: Dynamic Global Routing)
 10.At time 10s, the first flow is stopped.  
-
-
-CHUNK 29 (Experiment 1: Compare the performance of DropTail and RED queue techniques)
 11.At time 11s, a new flow started, but to n6's other IP address (the one on the n1/n6 p2p link)  
 12.At time 12s, the n1 interface down between n1 and n6 is put down. Packets will be diverted to the 
 alternate path  
@@ -823,7 +823,7 @@ notification will cause a new local interface route, at higher priority than glo
 30
 
 
-CHUNK 30 (Experiment: 4)
+CHUNK 30 (Experiment 4)
 Experiment-4 
 
 
@@ -937,7 +937,7 @@ bytes?
 35
 
 
-CHUNK 37 (Experiment: 5)
+CHUNK 37 (Experiment 5)
 Experiment-5 
 
 
@@ -1004,11 +1004,11 @@ have no ‘IPv4Interface’ associated with them)
 8. Observe the fresh pcap files generated. You should be able to see data transfer between the two Wi-fi 
 devices. 
 
+
+
+CHUNK 41 (AODV (Ad-hoc On-Demand Distance Vector))
 AODV (Ad-hoc On-Demand Distance Vector) 
 
-
-
-CHUNK 41 (Experiment 2: Extending the previous topology)
 Ad hoc On-Demand Distance Vector (AODV) Routing is a routing protocol for mobile ad hoc networks 
 (MANETs) and other wireless ad hoc networks. 
 The AODV Routing Protocol uses an on-demand approach for finding routes, that is, a route is established 
@@ -1040,7 +1040,7 @@ References
 39
 
 
-CHUNK 43 (Experiment: 6)
+CHUNK 43 (Experiment 6)
 Experiment-6 
 
 
@@ -1229,7 +1229,7 @@ References
 4
 
 
-CHUNK 51 (Experiment: 7)
+CHUNK 51 (Experiment 7)
 Experiment-7 
 
 
@@ -1458,7 +1458,7 @@ References
 5
 
 
-CHUNK 59 (Experiment: 8)
+CHUNK 59 (Experiment 8)
 Experiment-8 
 
 
@@ -1664,7 +1664,7 @@ Wireshark User’s Guide:www.wireshark.org/docs/wsug_html_chunked/
 68
 
 
-CHUNK 67 (Experiment: 9)
+CHUNK 67 (Experiment 9)
 Experiment-9 
 
 
@@ -1711,6 +1711,9 @@ Wireshark to do so).
 Figure2:Wireshark Snapshot Ubuntu 
 70
 
+
+
+CHUNK 70 (Experiment 1: Introduction to Wireshark)
 Experiment1: Introduction to Wireshark 
 
 1. Install Wireshark using the following command. If already installed, then please go to 
@@ -1729,7 +1732,7 @@ o What is promiscuous mode of operation?
 
 
 
-CHUNK 70 (Aim)
+CHUNK 71 (Experiment 1: Introduction to Wireshark)
 5. Filters–Therearedisplayfiltersandcapturefilters.Displayfilterscanbeusedonalready 
 captured 
 packets. Specify “tcp” in the display filter and press “Apply”. 
@@ -1747,7 +1750,7 @@ o Open try to open the pcap file in Wireshark.
 
 
 
-CHUNK 71 (Experiment 2: Introduction to tcpdump)
+CHUNK 72 (Experiment 2: Introduction to tcpdump)
 Experiment 2: Introduction to tcpdump 
 
 Tcpdump is a common packet analyzer that runs under the command line. It allows the user to intercept and 
@@ -1769,7 +1772,7 @@ minimal information).
 
 
 
-CHUNK 72 (Experiment 2: Introduction to tcpdump)
+CHUNK 73 (Experiment 2: Introduction to tcpdump)
 2. Explore the various options in tcpdump 
 o –i=>used to specify the interface to listen on(example:-ieth0) 
 o –c => used to limit the total number of packets captured (example: -c 100 will 
@@ -1787,14 +1790,14 @@ o dst<IP add#> => capture from specified destination address. Try to differentia
 and received packets.
 73
 
+
+
+CHUNK 74 (Experiment 3: Observation of packets in a LAN network)
 Experiment3: Observation of packets in a LAN network 
 
  Figure4: A part of the BITS Hyderabad network
 74
 
-
-
-CHUNK 73 (Experiment 2: Introduction to tcpdump)
 1. Close all browsers. Open a browser window and clear browser cache. 
 2. To view arp cache (On your Terminal: arp-a) (It displays MAC addresses, IP addresses, 
 interface names). Depending on the subnet, the IP addresses of Cyberoam, default 
@@ -1818,7 +1821,7 @@ o Differentiate for the rnet,IP,TCP,UDP etc.,
 
 
 
-CHUNK 74 (Experiment 2: Introduction to tcpdump)
+CHUNK 75 (Experiment 3: Observation of packets in a LAN network)
 12.ExploreStatistics->Conversations to cover flows(pair of endpoints) 
 o Observer different tabs(Ethernet,IP,TCP,UDPetc.). 
 o SortondifferentcolumnsinTCP–e.g.Duration,Packets,AddressA,RelStartetc. 
@@ -1838,11 +1841,14 @@ References
 ❖ WiresharkWikiHelp:wiki.wireshark.org/ 
 ❖ Tcpdumpdocumentation:www.tcpdump.org/#documentation 
 77
+
+
+CHUNK 76 (Experiment 10)
 Experimet-10 
 
 
 
-CHUNK 75 (Aim)
+CHUNK 77 (Aim)
 Aim: To analyze HTTP packets using Wireshark tool, and understand 
 the records returned by a DNS server. 
 
@@ -1864,7 +1870,7 @@ Tools used: Wireshark
 
 
 
-CHUNK 76 (Experiment 1: Working of HTTP)
+CHUNK 78 (Experiment 1: Working of HTTP)
 Experiment 1: Working of HTTP 
 1. Run Wireshark with sudo privileges. Start capturing in non-promiscuous mode. 
 2. Start up your web browser. Next, enter into your browserhttp://timesofindia.indiatimes.com. 
@@ -1899,7 +1905,7 @@ Figure.4. HTTP Cookie
 
 
 
-CHUNK 77 (Experiment 1: Working of HTTP)
+CHUNK 79 (Experiment 1: Working of HTTP)
 7. Persistent v/s Non-Persistent HTTP connections. Do you see Connection: keep-alive set 
 in your packet captures? 
 
@@ -1927,7 +1933,7 @@ sudo /etc/init.d/tinyproxy start
 
 
 
-CHUNK 78 (Experiment 1: Working of HTTP)
+CHUNK 80 (Experiment 1: Working of HTTP)
 Default port which is used by Tinyproxy is 8888. 
 Do the following on the other teammate’s PC (i.e., the client): 
 In Firefox, go to Edit → Preferences →  Advanced tab →Network tab → Click on Settings 
@@ -1957,7 +1963,7 @@ sudo apt-get remove tinyproxy
 
 
 
-CHUNK 79 (Experiment 1: Working of HTTP)
+CHUNK 81 (Experiment 1: Working of HTTP)
 DNS (Domain Name Server): 
 The Domain Name System (DNS) is a hierarchical naming system for computers 
 participating in the Internet. It associates information with domain names assigned to each of 
@@ -1973,7 +1979,7 @@ addresses. For example, the domain name “www.example.com” translates to the 
 84
 
 
-CHUNK 80 (Experiment 2: Understanding the records returned by DNS website)
+CHUNK 82 (Experiment 2: Understanding the records returned by DNS website)
 Experiment 2: Understanding the records returned by DNS website 
 1. Open “network-tools.com/nslook/” in a web browser. This website provides an online 
 tool for DNS lookups. 

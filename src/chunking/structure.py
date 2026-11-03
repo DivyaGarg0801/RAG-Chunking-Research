@@ -29,7 +29,8 @@ _HEADING_LABELS = (
 )
 _HEADING_PATTERN = "|".join(re.escape(label) for label in _HEADING_LABELS)
 _EXPERIMENT_HEADING_PATTERN = re.compile(
-    r"^(?:Experiment|Experimet|Expt)(?:\s*[\.\-–]\s*|\s*)"
+    r"^(?P<label>Experiment|Experimet|Expt)"
+    r"(?P<between>\s*[:.\-–]\s*|\s*)"
     r"(?P<number>\d+)(?:\s*[:\-–]\s*(?P<title>.*?))?$",
     re.IGNORECASE,
 )
@@ -52,6 +53,7 @@ class StructureChunk:
     heading_level: int
     parent_heading: str | None
     section_path: tuple[str, ...]
+    heading_occurrence: int | None = None
 
 
 def _normalized_heading_text(label: str) -> str:
@@ -62,7 +64,7 @@ def _normalized_heading_text(label: str) -> str:
     return cleaned.strip()
 
 
-def _detect_heading(line: str) -> dict[str, int | str | None] | None:
+def _detect_heading(line: str) -> dict[str, int | str | bool | None] | None:
     """Return heading metadata for a conservative line-level heading match."""
     if not isinstance(line, str):
         raise TypeError("Each line must be a string.")
@@ -94,6 +96,14 @@ def _detect_heading(line: str) -> dict[str, int | str | None] | None:
         return {
             "heading": heading,
             "heading_level": 1,
+            "is_experiment_heading": True,
+            "is_outer_experiment_hint": (
+                experiment_match.group("between").strip() == ":"
+                or (
+                    experiment_match.group("between").strip() in {"-", "–"}
+                    and not title
+                )
+            ),
         }
 
     for topic_heading in _TOPIC_HEADINGS:
@@ -101,6 +111,7 @@ def _detect_heading(line: str) -> dict[str, int | str | None] | None:
             return {
                 "heading": topic_heading,
                 "heading_level": 2,
+                "is_experiment_heading": False,
             }
 
     match = re.match(
@@ -149,6 +160,8 @@ def _detect_heading(line: str) -> dict[str, int | str | None] | None:
     return {
         "heading": normalized,
         "heading_level": heading_level,
+        "is_experiment_heading": label.lower() in {"experiment", "expt"},
+        "is_outer_experiment_hint": False,
     }
 
 
@@ -234,13 +247,17 @@ def structure_chunk(
     current_path: tuple[str, ...] = ()
     current_level = 0
     current_lines: list[str] = []
-    recent_level_one_heading: str | None = None
+    current_occurrence: int | None = None
+    active_outer_experiment: str | None = None
+    active_nested_experiment: str | None = None
+    next_heading_occurrence = 1
 
     def finalize_section(
         heading: str | None,
         parent: str | None,
         path: tuple[str, ...],
         level: int,
+        occurrence: int | None,
         lines_for_section: list[str],
     ) -> None:
         if not lines_for_section:
@@ -251,9 +268,11 @@ def structure_chunk(
         if not section_text.strip():
             return
 
-        chunks: list[tuple[str, str | None, int, str | None, tuple[str, ...]]] = []
+        chunks: list[
+            tuple[str, str | None, int, str | None, tuple[str, ...], int | None]
+        ] = []
         if max_chunk_size is None:
-            chunks.append((section_text, heading, level, parent, path))
+            chunks.append((section_text, heading, level, parent, path, occurrence))
         else:
             section_parts = _split_section_text(section_text, max_chunk_size)
             if any(len(part) > max_chunk_size for part in section_parts):
@@ -261,9 +280,16 @@ def structure_chunk(
                     "The configured maximum chunk size could not be enforced without dropping characters."
                 )
             for part in section_parts:
-                chunks.append((part, heading, level, parent, path))
+                chunks.append((part, heading, level, parent, path, occurrence))
 
-        for chunk_text, chunk_heading, chunk_level, chunk_parent, chunk_path in chunks:
+        for (
+            chunk_text,
+            chunk_heading,
+            chunk_level,
+            chunk_parent,
+            chunk_path,
+            chunk_occurrence,
+        ) in chunks:
             sections.append(
                 StructureChunk(
                     chunk_index=len(sections) + 1,
@@ -272,6 +298,7 @@ def structure_chunk(
                     heading_level=chunk_level,
                     parent_heading=chunk_parent,
                     section_path=chunk_path,
+                    heading_occurrence=chunk_occurrence,
                 )
             )
 
@@ -284,24 +311,55 @@ def structure_chunk(
                     current_parent,
                     current_path,
                     current_level,
+                    current_occurrence,
                     current_lines,
                 )
 
             heading_label = str(heading_info["heading"])
-            heading_level = int(heading_info["heading_level"])
-            if heading_level == 1:
-                recent_level_one_heading = heading_label
-                current_parent = None
-                current_path = (heading_label,)
-            else:
-                current_parent = recent_level_one_heading
-                if recent_level_one_heading is not None:
-                    current_path = (recent_level_one_heading, heading_label)
+            is_experiment_heading = bool(
+                heading_info.get("is_experiment_heading", False)
+            )
+            is_outer_experiment_hint = bool(
+                heading_info.get("is_outer_experiment_hint", False)
+            )
+            if is_experiment_heading:
+                if active_outer_experiment is None or is_outer_experiment_hint:
+                    heading_level = 1
+                    current_parent = None
+                    current_path = (heading_label,)
+                    active_outer_experiment = heading_label
+                    active_nested_experiment = None
                 else:
+                    heading_level = 2
+                    current_parent = active_outer_experiment
+                    current_path = (active_outer_experiment, heading_label)
+                    active_nested_experiment = heading_label
+            else:
+                heading_level = int(heading_info["heading_level"])
+                if active_nested_experiment is not None:
+                    if active_outer_experiment is None:
+                        raise RuntimeError(
+                            "A nested experiment has no enclosing outer experiment."
+                        )
+                    heading_level = 3
+                    current_parent = active_nested_experiment
+                    current_path = (
+                        active_outer_experiment,
+                        active_nested_experiment,
+                        heading_label,
+                    )
+                elif active_outer_experiment is not None:
+                    heading_level = 2
+                    current_parent = active_outer_experiment
+                    current_path = (active_outer_experiment, heading_label)
+                else:
+                    current_parent = None
                     current_path = (heading_label,)
 
             current_heading = heading_label
             current_level = heading_level
+            current_occurrence = next_heading_occurrence
+            next_heading_occurrence += 1
             current_lines = [line]
             continue
 
@@ -313,6 +371,7 @@ def structure_chunk(
             current_parent,
             current_path,
             current_level,
+            current_occurrence,
             current_lines,
         )
 
