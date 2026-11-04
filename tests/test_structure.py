@@ -44,6 +44,9 @@ class StructureChunkTests(unittest.TestCase):
             "Experiment.2:",
             "Experiment1:",
             "Experimet-10",
+            "Experlment5",
+            "Experi ment  6",
+            "Experiment — 7",
         )
         for heading in headings:
             with self.subTest(heading=heading):
@@ -53,6 +56,43 @@ class StructureChunkTests(unittest.TestCase):
                 self.assertIsNone(chunks[0].parent_heading)
                 self.assertEqual(chunks[0].section_path, (chunks[0].heading,))
                 self.assertEqual(chunks[0].text, f"{heading}\n")
+
+    def test_outer_experiment_variants_reset_an_active_hierarchy(self) -> None:
+        outer_headings = (
+            "Experiment 2",
+            "Experiment. 3",
+            "Experimet - 4",
+            "Experiment-5: Independent experiment",
+            "Experlment6",
+        )
+
+        for heading in outer_headings:
+            with self.subTest(heading=heading):
+                text = (
+                    "Experiment: 1\n"
+                    "Experiment 1: Nested experiment\n"
+                    "Aim: Nested aim.\n"
+                    f"{heading}\n"
+                    "Result: Independent result.\n"
+                )
+
+                chunks = structure_chunk(text)
+                outer_chunk = next(
+                    chunk for chunk in chunks if chunk.text.startswith(heading)
+                )
+                result_chunk = next(
+                    chunk for chunk in chunks if chunk.heading == "Result"
+                )
+
+                self.assertEqual(outer_chunk.heading_level, 1)
+                self.assertIsNone(outer_chunk.parent_heading)
+                self.assertEqual(outer_chunk.section_path, (outer_chunk.heading,))
+                self.assertEqual(result_chunk.parent_heading, outer_chunk.heading)
+                self.assertEqual(
+                    result_chunk.section_path,
+                    (outer_chunk.heading, "Result"),
+                )
+                self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
     def test_nested_experiment_titles_and_their_subsections_use_context(self) -> None:
         text = (
@@ -90,6 +130,33 @@ class StructureChunkTests(unittest.TestCase):
                 ("Experiment 1", "Experiment 1: Packet loss", "Procedure"),
                 ("Experiment 1", "Experiment 2: Throughput"),
                 ("Experiment 1", "Experiment 2: Throughput", "Result"),
+            ],
+        )
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
+    def test_trailing_separator_experiment_headings_remain_nested(self) -> None:
+        text = (
+            "Experiment-2\n"
+            "Experiment 1:\n"
+            "Aim: First nested aim.\n"
+            "Experiment 2:\n"
+            "Result: Second nested result.\n"
+        )
+
+        chunks = structure_chunk(text)
+
+        self.assertEqual(
+            [chunk.heading_level for chunk in chunks],
+            [1, 2, 3, 2, 3],
+        )
+        self.assertEqual(
+            [chunk.parent_heading for chunk in chunks],
+            [
+                None,
+                "Experiment 2",
+                "Experiment 1",
+                "Experiment 2",
+                "Experiment 2",
             ],
         )
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
@@ -180,6 +247,24 @@ class StructureChunkTests(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertIsNone(chunks[0].heading)
         self.assertEqual(chunks[0].text, text)
+
+    def test_ordinary_sentences_starting_with_heading_keywords_are_not_headings(
+        self,
+    ) -> None:
+        text = (
+            "Aim is to understand how the network behaves under load.\n"
+            "Result values are recorded after each measurement.\n"
+            "Program execution continues until all clients disconnect.\n"
+            "Theory suggests that queueing delay increases with traffic.\n"
+            "Procedure details are included in the appendix for reference.\n"
+        )
+
+        chunks = structure_chunk(text)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIsNone(chunks[0].heading)
+        self.assertEqual(chunks[0].text, text)
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
     def test_numbered_and_colon_variants_are_recognized(self) -> None:
         text = (
@@ -408,6 +493,33 @@ class StructureChunkTests(unittest.TestCase):
         self.assertTrue(all(len(chunk.text) <= 50 for chunk in chunks))
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
+    def test_repeated_heading_occurrences_get_distinct_ids_but_splits_share_ids(
+        self,
+    ) -> None:
+        text = (
+            "Experiment: 1\n"
+            "Aim:\n"
+            + ("measure the network carefully\n" * 8)
+            + "Aim:\n"
+            "confirm the result.\n"
+        )
+
+        chunks = structure_chunk(text, max_chunk_size=24)
+        aim_chunks = [chunk for chunk in chunks if chunk.heading == "Aim"]
+        first_occurrence = aim_chunks[0].heading_occurrence
+        first_aim_chunks = [
+            chunk for chunk in aim_chunks if chunk.heading_occurrence == first_occurrence
+        ]
+        second_aim = aim_chunks[-1]
+
+        self.assertGreater(len(first_aim_chunks), 1)
+        self.assertEqual(
+            {chunk.heading_occurrence for chunk in first_aim_chunks},
+            {first_occurrence},
+        )
+        self.assertNotEqual(first_occurrence, second_aim.heading_occurrence)
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
     def test_long_whitespace_only_line_is_split_without_losing_whitespace(self) -> None:
         text = "Start\n" + (" " * 200) + "\nEnd\n"
 
@@ -428,6 +540,23 @@ class StructureChunkTests(unittest.TestCase):
 
         self.assertTrue(all(chunk.text for chunk in chunks))
         self.assertTrue(all(len(chunk.text) <= 24 for chunk in chunks))
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
+    def test_oversized_paragraph_lines_and_blank_runs_split_at_tiny_limit(self) -> None:
+        text = (
+            "Intro\n\n\n"
+            + ("Long paragraph words continue without ending. " * 4)
+            + "\n"
+            + ("L" * 41)
+            + "\n\n\n\n"
+            + (" " * 27)
+            + "Tail"
+        )
+
+        chunks = structure_chunk(text, max_chunk_size=3)
+
+        self.assertTrue(chunks)
+        self.assertTrue(all(0 < len(chunk.text) <= 3 for chunk in chunks))
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
     def test_multiple_blank_lines_before_oversized_paragraph_are_preserved(self) -> None:
@@ -483,8 +612,37 @@ class StructureChunkTests(unittest.TestCase):
         self.assertTrue(all(len(chunk.text) <= 50 for chunk in chunks))
         self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
-    def test_whitespace_only_input_returns_no_chunks(self) -> None:
-        self.assertEqual(structure_chunk(" \n\t\r\n "), [])
+    def test_whitespace_only_input_is_preserved_exactly(self) -> None:
+        text = " \n\t\r\n "
+
+        chunks = structure_chunk(text)
+
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+        self.assertTrue(all(chunk.heading is None for chunk in chunks))
+
+    def test_whitespace_only_input_respects_small_chunk_size(self) -> None:
+        text = " \t\n\r\n   "
+
+        chunks = structure_chunk(text, max_chunk_size=2)
+
+        self.assertTrue(all(len(chunk.text) <= 2 for chunk in chunks))
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
+    def test_leading_trailing_and_between_heading_whitespace_is_preserved(self) -> None:
+        text = (
+            " \t\n"
+            "Experiment 1: Demo\n"
+            " \n\t\n"
+            "Aim:\n"
+            "Measure delay.\n"
+            " \t\n"
+        )
+
+        chunks = structure_chunk(text, max_chunk_size=5)
+
+        self.assertTrue(all(chunk.text for chunk in chunks))
+        self.assertTrue(all(len(chunk.text) <= 5 for chunk in chunks))
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
 
     def test_false_positive_heading_detection_is_rejected(self) -> None:
         text = (
@@ -637,6 +795,127 @@ class StructurePreviewTests(unittest.TestCase):
             with self.subTest(chunk=chunk):
                 with self.assertRaises(RuntimeError):
                     preview_structure._validate_chunks([chunk], "Text", 10)
+
+    def test_preview_validator_checks_indices_and_exact_reconstruction(self) -> None:
+        chunks = [
+            StructureChunk(
+                chunk_index=2,
+                text="first",
+                heading=None,
+                heading_level=0,
+                parent_heading=None,
+                section_path=(),
+            ),
+            StructureChunk(
+                chunk_index=3,
+                text="second",
+                heading=None,
+                heading_level=0,
+                parent_heading=None,
+                section_path=(),
+            ),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "indexes"):
+            preview_structure._validate_chunks(chunks, "firstsecond", 10)
+
+        valid_indices = [
+            StructureChunk(
+                chunk_index=index,
+                text=chunk.text,
+                heading=chunk.heading,
+                heading_level=chunk.heading_level,
+                parent_heading=chunk.parent_heading,
+                section_path=chunk.section_path,
+            )
+            for index, chunk in enumerate(chunks, start=1)
+        ]
+        with self.assertRaisesRegex(RuntimeError, "reconstruct"):
+            preview_structure._validate_chunks(valid_indices, "different", 10)
+
+    def test_preview_validator_rejects_reused_heading_occurrence_id(self) -> None:
+        chunks = [
+            StructureChunk(
+                chunk_index=1,
+                text="Aim\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Aim",),
+                heading_occurrence=1,
+            ),
+            StructureChunk(
+                chunk_index=2,
+                text="Result\n",
+                heading="Result",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Result",),
+                heading_occurrence=2,
+            ),
+            StructureChunk(
+                chunk_index=3,
+                text="Aim\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Aim",),
+                heading_occurrence=1,
+            ),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "reused"):
+            preview_structure._validate_chunks(chunks, "Aim\nResult\nAim\n", 10)
+
+    def test_preview_validator_requires_occurrence_metadata_to_match(self) -> None:
+        chunks = [
+            StructureChunk(
+                chunk_index=1,
+                text="Aim\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Aim",),
+                heading_occurrence=1,
+            ),
+            StructureChunk(
+                chunk_index=2,
+                text="body\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading="Experiment 1",
+                section_path=("Experiment 1", "Aim"),
+                heading_occurrence=1,
+            ),
+        ]
+
+        with self.assertRaises(RuntimeError):
+            preview_structure._validate_chunks(chunks, "Aim\nbody\n", 20)
+
+    def test_preview_validator_rejects_occurrence_id_covering_two_headings(self) -> None:
+        chunks = [
+            StructureChunk(
+                chunk_index=1,
+                text="Aim\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Aim",),
+                heading_occurrence=1,
+            ),
+            StructureChunk(
+                chunk_index=2,
+                text="Aim\n",
+                heading="Aim",
+                heading_level=2,
+                parent_heading=None,
+                section_path=("Aim",),
+                heading_occurrence=1,
+            ),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            preview_structure._validate_chunks(chunks, "Aim\nAim\n", 10)
 
     def test_preview_rejects_oversized_chunks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -29,9 +29,9 @@ _HEADING_LABELS = (
 )
 _HEADING_PATTERN = "|".join(re.escape(label) for label in _HEADING_LABELS)
 _EXPERIMENT_HEADING_PATTERN = re.compile(
-    r"^(?P<label>Experiment|Experimet|Expt)"
-    r"(?P<between>\s*[:.\-–]\s*|\s*)"
-    r"(?P<number>\d+)(?:\s*[:\-–]\s*(?P<title>.*?))?$",
+    r"^(?P<label>Experi(?:\s*ment|\s*met)|Exper[l1]\s*ment|Experment|Expt)"
+    r"(?P<between>\s*[:.\-–—]\s*|\s*)"
+    r"(?P<number>\d+)(?:\s*(?P<after>[:\-–—])\s*(?P<title>.*?))?$",
     re.IGNORECASE,
 )
 _TOPIC_HEADINGS = (
@@ -93,16 +93,15 @@ def _detect_heading(line: str) -> dict[str, int | str | bool | None] | None:
             heading = f"Experiment {experiment_match.group('number')}: {title}"
         else:
             heading = f"Experiment {experiment_match.group('number')}"
+        prefix_separator = experiment_match.group("between").strip()
+        trailing_separator = experiment_match.group("after")
         return {
             "heading": heading,
             "heading_level": 1,
             "is_experiment_heading": True,
             "is_outer_experiment_hint": (
-                experiment_match.group("between").strip() == ":"
-                or (
-                    experiment_match.group("between").strip() in {"-", "–"}
-                    and not title
-                )
+                prefix_separator in {":", "-", "–", "—"}
+                or (not title and trailing_separator is None)
             ),
         }
 
@@ -237,7 +236,7 @@ def structure_chunk(
             or max_chunk_size <= 0
         ):
             raise ValueError("max_chunk_size must be a positive integer or None.")
-    if not text.strip():
+    if not text:
         return []
 
     lines = text.splitlines(keepends=True)
@@ -265,8 +264,6 @@ def structure_chunk(
         # Keep heading-only sections as valid chunks so consecutive headings do not
         # silently lose observable section text while preserving exact reconstruction.
         section_text = "".join(lines_for_section)
-        if not section_text.strip():
-            return
 
         chunks: list[
             tuple[str, str | None, int, str | None, tuple[str, ...], int | None]

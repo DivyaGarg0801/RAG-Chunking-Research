@@ -6,6 +6,41 @@ Refined structure-aware chunking is implemented and validated on the
 `feature/structure-based-chunking` branch. The changes remain local and
 uncommitted.
 
+## Structure hierarchy and whitespace correction (2026-11-04)
+
+- Outer-experiment detection now uses separators before the experiment number,
+  bare-number headings, trailing-separator context, and OCR spelling variants.
+  This distinguishes manual-level `Experiment-2` headings from nested
+  `Experiment 1:` headings in the actual manual; a new outer heading clears
+  nested context.
+- Whitespace-only input and whitespace-only sections now produce chunks rather
+  than being discarded. Empty input still produces no chunks. Leading,
+  trailing, and internal source characters remain exactly reconstructable.
+- The preview validator now checks chunk indices and sizes, exact reconstruction,
+  valid heading levels, hierarchy and parent/path consistency, consistent
+  metadata across split occurrences, and unique heading appearances.
+- Regression coverage was added for OCR and punctuation variants, nested and
+  independent experiments, heading-keyword prose, exact whitespace retention,
+  tiny maximum sizes, long paragraphs and lines, blank-line runs, and invalid
+  occurrence metadata.
+- A fresh corrected preview is saved at
+  `experiments/results/structure_based_preview_v2_corrected/`. The prior
+  `experiments/results/structure_preview/` directory was not modified.
+- The corrected run extracted 87 pages (0 empty), reconstructed 78,531 cleaned
+  characters exactly, and produced 82 chunks (average 957.70, minimum 14,
+  maximum 1,495). It detected 37 unique headings and 50 heading occurrences;
+  chunk counts by level 0/1/2/3 are 4/10/67/1.
+- An initial, separate in-session run at
+  `experiments/results/structure_based_preview_v2/` preceded discovery of the
+  trailing-separator case. It remains unchanged; the
+  `structure_based_preview_v2_corrected` output is authoritative.
+- The complete requested suite,
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, passed all 164
+  tests.
+- `git diff --check` exited successfully. Git emitted only its existing
+  line-ending notice for `src/chunking/structure.py` (LF will be converted to
+  CRLF on a future Git write).
+
 ## Structure heading hierarchy refinement (2026-11-03)
 
 - Heading recognition now accepts `Experiment: 1`, `Experiment 1`,

@@ -45,11 +45,19 @@ The sequence remains intentionally separate from logical-unit-based chunking:
 structure-based chunking groups headings and subsections, while logical-unit
 chunking will preserve an entire experiment as one unit in a later milestone.
 
-### Real preview result
+### Structure preview results
 
-The structure preview was executed on the local laboratory manual with a maximum
-chunk size of 1500 characters. It processed 87 pages and produced 80 chunks from
-78,531 cleaned characters. The average chunk length was 981.64 characters, the
-minimum length was 14, and the maximum was 1495. The chunker reconstructed the
-source text exactly, and the preview outputs were saved under
-`experiments/results/structure_preview/`.
+The original saved preview under `experiments/results/structure_preview/` is a
+historical output; its summary reports 80 chunks, an average size of 981.64
+characters, a minimum of 14, and a maximum of 1,495. A replay of the prior
+implementation recorded in `docs/PROJECT_STATUS.md` produced 82 chunks, so the
+saved summary and replay did not agree.
+
+The corrected implementation was run on the local laboratory manual and its
+authoritative preview is saved separately under
+`experiments/results/structure_based_preview_v2_corrected/`. It processed 87
+pages (none empty) and reconstructed all 78,531 cleaned characters exactly.
+It produced 82 chunks averaging 957.70 characters, with a minimum of 14 and a
+maximum of 1,495. The 1,500-character limit is unchanged. See
+[`docs/structure_based_chunking.md`](docs/structure_based_chunking.md) for
+hierarchy statistics, validation details, and limitations.

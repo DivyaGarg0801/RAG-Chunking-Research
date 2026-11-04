@@ -8,12 +8,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.chunking.structure import StructureChunk, structure_chunk
+from src.chunking.structure import StructureChunk, _detect_heading, structure_chunk
 from src.ingestion.pdf_loader import extract_pdf_pages
 from src.preprocessing.text_cleaner import clean_text
 
 SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
-OUTPUT_DIRECTORY = PROJECT_ROOT / "experiments" / "results" / "structure_preview"
+OUTPUT_DIRECTORY = (
+    PROJECT_ROOT
+    / "experiments"
+    / "results"
+    / "structure_based_preview_v2_corrected"
+)
 MAX_CHUNK_SIZE = 1500
 PAGE_SEPARATOR = "\n"
 
@@ -25,28 +30,61 @@ def _validate_chunks(
 ) -> None:
     """Validate chunk metadata, reconstruction, and configured size limits."""
     if not chunks:
-        raise RuntimeError("The structure-based preview produced no chunks.")
+        if combined_text:
+            raise RuntimeError("The structure-based preview produced no chunks.")
+        return
+
+    if any(not chunk.text for chunk in chunks):
+        raise RuntimeError("One or more generated chunks are empty.")
+
+    if any(len(chunk.text) > max_chunk_size for chunk in chunks):
+        raise RuntimeError("A generated chunk exceeds the configured size limit.")
+
+    reconstructed_text = "".join(chunk.text for chunk in chunks)
+    if reconstructed_text != combined_text:
+        raise RuntimeError(
+            "The structure-based preview did not reconstruct the document text exactly."
+        )
+
+    if any(
+        not isinstance(chunk.chunk_index, int)
+        or isinstance(chunk.chunk_index, bool)
+        for chunk in chunks
+    ):
+        raise RuntimeError("Chunk indexes must be integers.")
 
     chunk_indices = [chunk.chunk_index for chunk in chunks]
     if chunk_indices != list(range(1, len(chunks) + 1)):
         raise RuntimeError("Chunk indexes are not sequential.")
 
-    if any(not chunk.text for chunk in chunks):
-        raise RuntimeError("One or more generated chunks are empty.")
-
     for chunk in chunks:
-        if chunk.heading_level not in (0, 1, 2, 3):
+        if (
+            not isinstance(chunk.heading_level, int)
+            or isinstance(chunk.heading_level, bool)
+            or chunk.heading_level not in (0, 1, 2, 3)
+        ):
             raise RuntimeError("A generated chunk has an invalid heading level.")
         if chunk.heading is None and chunk.heading_level != 0:
             raise RuntimeError(
                 "An unheaded chunk must have heading level 0."
             )
+        if chunk.heading is None and (
+            chunk.parent_heading is not None
+            or chunk.section_path
+            or chunk.heading_occurrence is not None
+        ):
+            raise RuntimeError("An unheaded chunk cannot have heading metadata.")
         if chunk.heading is not None and chunk.heading_level == 0:
             raise RuntimeError("A headed chunk must have a positive heading level.")
         if chunk.heading is not None and not chunk.section_path:
             raise RuntimeError(
                 "A headed chunk must have a non-empty section path."
             )
+        if chunk.heading is not None and any(
+            not isinstance(path_heading, str) or not path_heading
+            for path_heading in chunk.section_path
+        ):
+            raise RuntimeError("A section path must contain non-empty headings.")
         if chunk.heading is not None and chunk.section_path[-1] != chunk.heading:
             raise RuntimeError("A headed chunk has an inconsistent section path.")
         if chunk.heading is not None:
@@ -54,21 +92,45 @@ def _validate_chunks(
                 raise RuntimeError(
                     "A root heading must have a one-item section path."
                 )
-            if chunk.parent_heading is not None and (
-                len(chunk.section_path) != chunk.heading_level
-                or len(chunk.section_path) < 2
-                or chunk.section_path[-2] != chunk.parent_heading
-            ):
-                raise RuntimeError(
-                    "A headed chunk has an inconsistent parent and section path."
-                )
+            if chunk.parent_heading is None and chunk.heading_level == 3:
+                raise RuntimeError("A level-three heading must have a parent.")
+            if chunk.parent_heading is not None:
+                if (
+                    len(chunk.section_path) != chunk.heading_level
+                    or len(chunk.section_path) < 2
+                    or chunk.section_path[-2] != chunk.parent_heading
+                ):
+                    raise RuntimeError(
+                        "A headed chunk has an inconsistent parent and section path."
+                    )
+        if chunk.heading is not None and (
+            not isinstance(chunk.heading_occurrence, int)
+            or isinstance(chunk.heading_occurrence, bool)
+            or chunk.heading_occurrence <= 0
+        ):
+            raise RuntimeError("A headed chunk must have a positive occurrence ID.")
 
     occurrence_metadata: dict[
         int, tuple[str | None, int, str | None, tuple[str, ...]]
     ] = {}
+    occurrence_text: dict[int, list[str]] = {}
+    closed_occurrences: set[int] = set()
+    previous_occurrence: int | None = None
     for chunk in chunks:
         if chunk.heading_occurrence is None:
+            if previous_occurrence is not None:
+                closed_occurrences.add(previous_occurrence)
+                previous_occurrence = None
             continue
+        if chunk.heading_occurrence != previous_occurrence:
+            if previous_occurrence is not None:
+                closed_occurrences.add(previous_occurrence)
+            if chunk.heading_occurrence in closed_occurrences:
+                raise RuntimeError(
+                    "A heading occurrence ID was reused for a separate appearance."
+                )
+            previous_occurrence = chunk.heading_occurrence
+        occurrence_text.setdefault(chunk.heading_occurrence, []).append(chunk.text)
         metadata = (
             chunk.heading,
             chunk.heading_level,
@@ -84,14 +146,21 @@ def _validate_chunks(
                 "Chunks from one heading occurrence have inconsistent metadata."
             )
 
-    reconstructed_text = "".join(chunk.text for chunk in chunks)
-    if reconstructed_text != combined_text:
-        raise RuntimeError(
-            "The structure-based preview did not reconstruct the document text exactly."
-        )
-
-    if any(len(chunk.text) > max_chunk_size for chunk in chunks):
-        raise RuntimeError("A generated chunk exceeds the configured size limit.")
+    for occurrence, text_parts in occurrence_text.items():
+        section_lines = "".join(text_parts).splitlines()
+        detected_headings = [
+            _detect_heading(line)
+            for line in section_lines
+            if _detect_heading(line) is not None
+        ]
+        if (
+            len(detected_headings) != 1
+            or detected_headings[0]["heading"]
+            != occurrence_metadata[occurrence][0]
+        ):
+            raise RuntimeError(
+                "A heading occurrence ID must identify exactly one heading appearance."
+            )
 
 
 def main() -> None:
@@ -154,6 +223,30 @@ def main() -> None:
     unique_heading_keys = {
         chunk.heading.casefold() for chunk in chunks if chunk.heading is not None
     }
+    representative_chunks: list[dict[str, object]] = []
+    seen_representative_occurrences: set[int] = set()
+    for chunk in chunks:
+        if (
+            chunk.heading is None
+            or chunk.heading_occurrence in seen_representative_occurrences
+        ):
+            continue
+        if chunk.heading_occurrence is None:
+            continue
+        seen_representative_occurrences.add(chunk.heading_occurrence)
+        representative_chunks.append(
+            {
+                "chunk_index": chunk.chunk_index,
+                "heading": chunk.heading,
+                "heading_level": chunk.heading_level,
+                "parent_heading": chunk.parent_heading,
+                "section_path": list(chunk.section_path),
+                "text_preview": chunk.text[:240],
+            }
+        )
+        if len(representative_chunks) == 8:
+            break
+
     summary = {
         "source_pdf_filename": SOURCE_PDF.name,
         "number_of_pages_extracted": len(extraction.pages),
@@ -167,6 +260,11 @@ def main() -> None:
         "number_of_heading_occurrences": len(heading_by_occurrence),
         "heading_occurrence_count_by_heading": occurrence_counts_by_heading,
         "number_of_unheaded_chunks": unheaded_chunk_count,
+        "chunk_count_by_heading_level": {
+            str(level): sum(chunk.heading_level == level for chunk in chunks)
+            for level in range(4)
+        },
+        "representative_chunks": representative_chunks,
         "chunk_size_statistics_characters": {
             "average": total_characters / len(chunks) if chunks else 0,
             "minimum": min(chunk_lengths, default=None),
