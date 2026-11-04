@@ -37,6 +37,11 @@ Desktop.ini
 # Original research source document (keep local; check redistribution rights)
 data/raw/computer_networks_lab_manual.pdf
 data
+# Generated fixed-size chunking preview data
+experiments/results/fixed_size_preview/
 
-# Ignore entire experiments folder
-experiments/
+# Generated semantic chunking preview data
+experiments/results/semantic_preview/
+
+# Generated semantic segmentation comparison outputs
+experiments/results/semantic_segmentation_comparison/
