@@ -2,11 +2,132 @@
 
 ## Current milestone
 
-Milestone 9: Semantic chunking, real-document diagnostics, and controlled
-comparison of both semantic input segmenters are complete. Retrieval evaluation
-is pending; the default similarity threshold remains unchanged.
+Refined structure-aware chunking is implemented and validated on the
+`feature/structure-based-chunking` branch. The changes remain local and
+uncommitted.
+
+## Structure hierarchy and whitespace correction (2026-11-04)
+
+- Outer-experiment detection now uses separators before the experiment number,
+  bare-number headings, trailing-separator context, and OCR spelling variants.
+  This distinguishes manual-level `Experiment-2` headings from nested
+  `Experiment 1:` headings in the actual manual; a new outer heading clears
+  nested context.
+- Whitespace-only input and whitespace-only sections now produce chunks rather
+  than being discarded. Empty input still produces no chunks. Leading,
+  trailing, and internal source characters remain exactly reconstructable.
+- The preview validator now checks chunk indices and sizes, exact reconstruction,
+  valid heading levels, hierarchy and parent/path consistency, consistent
+  metadata across split occurrences, and unique heading appearances.
+- Regression coverage was added for OCR and punctuation variants, nested and
+  independent experiments, heading-keyword prose, exact whitespace retention,
+  tiny maximum sizes, long paragraphs and lines, blank-line runs, and invalid
+  occurrence metadata.
+- A fresh corrected preview is saved at
+  `experiments/results/structure_based_preview_v2_corrected/`. The prior
+  `experiments/results/structure_preview/` directory was not modified.
+- The corrected run extracted 87 pages (0 empty), reconstructed 78,531 cleaned
+  characters exactly, and produced 82 chunks (average 957.70, minimum 14,
+  maximum 1,495). It detected 37 unique headings and 50 heading occurrences;
+  chunk counts by level 0/1/2/3 are 4/10/67/1.
+- An initial, separate in-session run at
+  `experiments/results/structure_based_preview_v2/` preceded discovery of the
+  trailing-separator case. It remains unchanged; the
+  `structure_based_preview_v2_corrected` output is authoritative.
+- The complete requested suite,
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, passed all 164
+  tests.
+- `git diff --check` exited successfully. Git emitted only its existing
+  line-ending notice for `src/chunking/structure.py` (LF will be converted to
+  CRLF on a future Git write).
+
+## Structure heading hierarchy refinement (2026-11-03)
+
+- Heading recognition now accepts `Experiment: 1`, `Experiment 1`,
+  `Experiment.2:`, `Experiment1:`, and the OCR form `Experimet-10`.
+- The classifier uses heading syntax and active document context: outer
+  experiment headings reset the hierarchy, nested experiment titles are level
+  2, and their subsections are level 3. Subsections under an outer experiment
+  remain level 2 and inherit that experiment as their parent.
+- Every heading occurrence has a stable occurrence ID shared by its split
+  chunks. The preview summary reports unique headings, heading occurrences,
+  occurrence and chunk counts by heading, unheaded chunks, and chunk-size
+  statistics separately.
+- Chunk text is still concatenated exactly to reconstruct the cleaned source;
+  no overlap was introduced and the maximum remains 1,500 characters.
+- Regression tests cover heading variants, OCR, nested hierarchy and resets,
+  repeated subsections, split metadata, occurrence statistics, size limits,
+  and exact reconstruction.
+- The complete requested command,
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, passed all 153
+  tests.
+- Regenerated the structure preview from the local 87-page
+  `computer_networks_lab_manual.pdf`; all three generated outputs were
+  inspected and published under `experiments/results/structure_preview/`.
+- The pre-change baseline was replayed from `HEAD` with the same PDF,
+  extraction, cleaning, and 1,500-character limit. The older saved preview
+  summary reported 80 chunks, but the committed pre-change code reproducibly
+  generated 82; the before/after comparison below therefore uses the replayed
+  baseline rather than that stale summary.
+
+| Statistic | Before (replayed `HEAD`) | After |
+|---|---:|---:|
+| Extracted pages | 87 | 87 |
+| Cleaned characters | 78,531 | 78,531 |
+| Total chunks | 82 | 82 |
+| Unique detected headings (case-insensitive) | 37 | 37 |
+| Heading occurrences | 50 | 50 |
+| Unheaded chunks | 4 | 4 |
+| Average chunk size | 957.70 | 957.70 |
+| Minimum chunk size | 14 | 14 |
+| Maximum chunk size | 1,495 | 1,495 |
+
+Chunk counts and sizes did not change: the refinement corrected hierarchy
+metadata, not text boundaries. The generated summary now records the heading
+statistics that were previously unavailable.
 
 ## Completed
+
+- Repaired `requirements.txt` by removing the unresolved merge markers and
+  keeping the exact direct dependency pins required for the project baseline:
+  `PyMuPDF==2.0`, `requests==2.32.5`, and `sentence-transformers==5.2.0`.
+- Verified the active interpreter in the existing project `.venv` before any
+  installation step; it is Python 3.12.3, not a recreated environment.
+- Installed the pinned dependencies with
+  `\.\.venv\Scripts\python.exe -m pip install --no-cache-dir -r requirements.txt`
+  and confirmed it completed successfully.
+- Verified the runtime imports and versions using the project `.venv`:
+  `PyMuPDF 2.0`, `requests 2.32.5`, and `sentence_transformers 5.2.0`.
+- Ran the complete project test suite with
+  `\.\.venv\Scripts\python.exe -m unittest discover -s tests -v` and it
+  completed successfully with exit code 0.
+- Added the structure-aware chunking implementation in `src/chunking/structure.py`.
+- Added synthetic tests in `tests/test_structure.py` covering heading detection,
+  exact text preservation, multi-level structure, oversized sections, and
+  unheaded fallback text.
+- Added `scripts/preview_structure.py` to run the structure-based preview on the
+  lab manual and save chunk metadata and summary outputs.
+- Kept the repo on the local feature branch `feature/structure-based-chunking`,
+  left all changes uncommitted, and did not stage, push, merge, or create a PR.
+- Ran the structure preview and recorded actual manual statistics for the local
+  laboratory manual.
+
+## Structure-based chunking notes
+
+- The implementation uses conservative heading recognition instead of treating
+  every shared word such as "Aim" or "Result" as a heading.
+- A heading must match a strict line-level pattern involving numbering,
+  punctuation, line length, and context before it is treated as a section.
+- Every generated chunk is meant to reconstruct the original source exactly by
+  joining chunk texts without dropping whitespace or blank lines.
+- The chunker preserves section hierarchy using metadata such as heading,
+  heading level, and parent heading, but it does not merge whole experiments:
+  that behaviour is reserved for the later logical-unit-based milestone.
+- The original saved preview summary reported 80 chunks from 78,531 cleaned
+  characters, with an average length of 981.64, a minimum of 14, and a maximum
+  of 1495. This did not match a replay of the committed pre-change code; see
+  the structure refinement section above for the verified before/after
+  comparison and regenerated output.
 
 - Confirmed that Python 3.13.14 is available.
 - Created the project `.venv` virtual environment.
