@@ -103,7 +103,7 @@ def _detect_heading(line: str) -> dict[str, int | str | bool | None] | None:
                 prefix_separator in {":", "-", "–", "—"}
                 or (not title 
                     and trailing_separator is None
-                    and prefix_separator == ""
+                    and prefix_separator in {"", "."}
                 )
             ),
         }
