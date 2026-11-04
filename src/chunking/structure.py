@@ -101,7 +101,10 @@ def _detect_heading(line: str) -> dict[str, int | str | bool | None] | None:
             "is_experiment_heading": True,
             "is_outer_experiment_hint": (
                 prefix_separator in {":", "-", "–", "—"}
-                or (not title and trailing_separator is None)
+                or (not title 
+                    and trailing_separator is None
+                    and prefix_separator == ""
+                )
             ),
         }
 
