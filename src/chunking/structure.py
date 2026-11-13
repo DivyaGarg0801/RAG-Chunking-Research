@@ -64,6 +64,14 @@ def _normalized_heading_text(label: str) -> str:
     return cleaned.strip()
 
 
+def is_experiment_heading(line: str | None) -> bool:
+    """Return True when a line matches an experiment-heading pattern."""
+    if not isinstance(line, str):
+        return False
+    heading_info = _detect_heading(line)
+    return bool(heading_info and heading_info.get("is_experiment_heading", False))
+
+
 def _detect_heading(line: str) -> dict[str, int | str | bool | None] | None:
     """Return heading metadata for a conservative line-level heading match."""
     if not isinstance(line, str):
