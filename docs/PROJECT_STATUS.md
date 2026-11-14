@@ -2,29 +2,9 @@
 
 ## Current milestone
 
-Logical-unit chunking is now validated locally on the current working tree. The
-implementation groups contiguous non-experiment text into fallback blocks,
-retains experiment hierarchy and occurrence IDs, enforces the configured maximum
-chunk size for every emitted chunk, and preserves exact source reconstruction by
-concatenating chunk texts without loss or reordering.
-
-## Logical-unit chunking (2026-11-13)
-
-- Added `src/chunking/logical_unit.py` to group content by experiment and keep
-  each logical unit coherent.
-- When an experiment fits the configured maximum size, it is emitted as one
-  chunk with metadata for experiment ID, experiment title, parent experiment,
-  and source context.
-- When an experiment exceeds the limit, it is split into child chunks while
-  carrying the same experiment metadata and without merging neighbouring
-  experiments.
-- Non-experiment text is preserved as a fallback block rather than being
-  silently discarded.
-- Added `tests/test_logical_unit.py` covering empty input, single experiments,
-  multiple experiments, oversized experiment splitting, and fallback text.
-- Validated with
-  `\.\.venv\Scripts\python.exe -m unittest tests.test_logical_unit -v`
-  and with the structure suite, which remained green.
+Refined structure-aware chunking is implemented and validated on the
+`feature/structure-based-chunking` branch. The changes remain local and
+uncommitted.
 
 ## Structure hierarchy and whitespace correction (2026-11-04)
 
