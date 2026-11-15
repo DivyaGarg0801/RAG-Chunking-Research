@@ -21,15 +21,18 @@ The planned pipeline is to extract text and page information from source manuals
 ## Current implementation status
 
 The project currently includes page-level PDF text extraction, conservative text
-preprocessing, fixed-size and recursive chunking, a local sentence-embedding
-semantic chunker, and a structure-aware chunking pipeline.
+preprocessing, fixed-size, recursive, semantic, structure-based, and
+logical-unit-based chunking.
 
 The fixed-size preview was run on the local laboratory manual. A semantic
-preview script is available, and the structure-based preview is now implemented
-for real-manual runs without changing the semantic or logical-unit milestone
-work. Retrieval, evaluation queries, relevance judgements, and retrieval
-results remain to be implemented. No retrieval-quality conclusions have been
-made.
+preview script is available, and the structure-based and logical-unit previews
+have been run on the real manual. The logical-unit method groups experiment
+appearances and retains source page metadata while enforcing the 1,500-character
+preview limit. See
+[`docs/logical_unit_chunking.md`](docs/logical_unit_chunking.md) for its
+methodology and measured structural results. Retrieval, evaluation queries,
+relevance judgements, and retrieval results remain to be implemented. No
+retrieval-quality conclusions have been made.
 
 ## Structure-based chunking
 
@@ -43,7 +46,11 @@ character-level splitting.
 
 The sequence remains intentionally separate from logical-unit-based chunking:
 structure-based chunking groups headings and subsections, while logical-unit
-chunking will preserve an entire experiment as one unit in a later milestone.
+chunking groups each experiment appearance as an independent unit and may split
+oversized units at reviewed structural or textual boundaries. When titled
+child experiments follow an outer experiment heading, the outer heading and
+pre-child content form a separate context unit rather than being attributed to
+the first child.
 
 ### Structure preview results
 

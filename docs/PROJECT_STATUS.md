@@ -2,9 +2,109 @@
 
 ## Current milestone
 
-Refined structure-aware chunking is implemented and validated on the
-`feature/structure-based-chunking` branch. The changes remain local and
-uncommitted.
+Logical-unit-based chunking is implemented, previewed, and validated on the
+existing `feature/logical-unit-chunking` branch. The changes remain local,
+unstaged, and uncommitted. Retrieval evaluation is still pending.
+
+## Logical-unit-based chunking (2026-11-15)
+
+- Added `src/chunking/logical.py` as an independent fifth chunking strategy.
+  Experiment appearances receive sequence-based logical-unit IDs; repeated
+  experiment numbers are not merged. When titled child experiments follow an
+  explicit outer heading, the heading and any pre-child text form a separate
+  `experiment_context` unit; each child starts at its own heading and records
+  the outer heading as parent metadata.
+- In the initial implementation, units above 1,500 characters split using a
+  strict subsection/paragraph/sentence/line/word priority before character
+  fallback. The boundary selection was refined later in this log to avoid
+  unnecessarily early cuts while retaining exact text and logical-unit IDs.
+- Added source document and page-number metadata, plus sequential indices,
+  character counts, section context, split status, and boundary reasons.
+  Runtime validation checks exact reconstruction, actual character counts,
+  chunk sizes, page ordering and uniqueness, valid metadata, and per-unit
+  consistency and contiguity.
+- Added `tests/test_logical.py` with 40 tests covering experiment hierarchy,
+  pre-child context, repeated headings, preamble and unheaded input, procedures
+  and code, size fallbacks, whitespace, sentence abbreviations and measurement
+  units, page provenance, invalid metadata, and preview safeguards.
+- Added `scripts/preview_logical.py`. It uses the existing PDF extraction and
+  cleaning pipeline, does not load an embedding model, refuses an existing
+  output directory, supports an optional separate output path, and removes
+  partial outputs if writing fails.
+- Ran the corrected preview on the 87-page Computer Networks manual. It
+  extracted no empty pages and reconstructed all 78,531 cleaned characters.
+  It produced 39 logical units (29 experiments, 9 experiment contexts, and
+  one preamble), 84 chunks, and 21 split units. Chunk lengths averaged 934.89
+  characters (minimum 34, maximum 1,495); all respected the 1,500-character
+  limit.
+- Saved the corrected run under
+  `experiments/results/logical_preview_reviewed/`. The original
+  `experiments/results/logical_preview/` outputs were not regenerated.
+- Updated `README.md` and added `docs/logical_unit_chunking.md` with the
+  hierarchy rules, measured results, reproduction command, and limitations.
+- Focused logical tests pass all 40 tests after the final-review corrections.
+- The complete requested command,
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, passed all
+  204 tests. Python compilation of `src/chunking/logical.py`,
+  `scripts/preview_logical.py`, and `tests/test_logical.py` succeeded;
+  `git diff --check` succeeded.
+- Independently re-extracted the source PDF and verified that the corrected
+  metadata text reconstructs all 78,531 cleaned characters, indices and
+  character counts are correct, every chunk is within 1,500 characters, and
+  source-page metadata is ordered, unique, and in range. SHA-256 hashes for
+  all three files in the prior `logical_preview/` directory match the recorded
+  pre-review values.
+- The fixed-size, recursive, semantic, and structure-based chunker
+  implementations and tests were not modified. All work remains unstaged on
+  `feature/logical-unit-chunking`.
+- Known limitations: heading detection is line-based and heuristic; missing
+  or unconventional headings may be classified as preamble or remain attached
+  to the current unit. Large experiments still require multiple physical
+  chunks. No retrieval-quality experiment has been run.
+- Next step: standardize the five chunker interfaces and compare their
+  structural statistics before beginning retrieval evaluation.
+
+## Logical-unit final review corrections (2026-11-15)
+
+- Selected and tested the hierarchy policy that pre-child material forms its
+  own outer `experiment_context`; child units begin at their titled heading.
+- Optimized abbreviation checks to inspect only a bounded suffix, preserving
+  decimal and measurement handling, and added long-text regressions.
+- Added page-provenance tests for exact page ends, empty intermediate pages,
+  and leading/trailing empty pages. The separator is attributed to the
+  preceding page; page metadata remains ordered and unique.
+- Expanded validation for sequential indices, actual text lengths, valid
+  experiment metadata, source-document consistency, page metadata, and
+  logical-unit ID reuse. Preview validation also checks page bounds.
+- Added `--output-directory` for a fresh preview destination; the default
+  destination still refuses overwrite. Corrected outputs were written
+  separately and the prior preview hashes were recorded for final comparison.
+
+## Logical-unit heading and boundary refinement (2026-11-15)
+
+- Added the dotted title form `Experiment 1. Packet Delay`, while retaining
+  previously supported OCR and punctuation variants. Added checks against
+  common sentence-like titles and regression cases for numbered prose.
+- Narrowed generic colon-heading recognition to concise title-like labels and
+  rejects common command openings, code syntax, and sentence clauses. The
+  real-manual inspection showed examples of both headings and colon-terminated
+  instructions, so recognition remains heuristic.
+- Chunk splitting now uses the latest fitting natural boundary, with
+  subsection/paragraph/sentence/line/word preference when boundaries tie.
+  Added protection against cutting immediately after a subsection label.
+  Character fallback remains available only when no natural boundary fits;
+  exact reconstruction and the configured maximum remain enforced.
+- Added five focused regression tests. The complete suite passed all 209
+  tests; Python compilation and `git diff --check` also passed.
+- Generated `experiments/results/logical_preview_refined_v2/` without touching
+  prior outputs. Independent validation confirmed 87 pages, 78,531 cleaned
+  characters, 39 logical units, 70 chunks, average size 1,121.87, minimum 3,
+  maximum 1,500, and exact reconstruction. The minimum-size chunk is an
+  isolated page-number line at a logical-unit boundary; no minimum chunk-size
+  rule was introduced.
+- The prior `logical_preview/` files still match their recorded SHA-256 hashes.
+  Fixed-size, recursive, semantic, and structure-based implementations and
+  tests remain untouched. No retrieval-quality conclusion is drawn.
 
 ## Structure hierarchy and whitespace correction (2026-11-04)
 
