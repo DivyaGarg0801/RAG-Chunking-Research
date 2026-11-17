@@ -21,12 +21,14 @@ from src.chunking.semantic import (
     semantic_chunk,
     segment_text,
 )
-from src.ingestion.pdf_loader import extract_pdf_pages
-from src.preprocessing.text_cleaner import clean_text
+from src.ingestion.extraction_artifact import (
+    DEFAULT_ARTIFACT_PATH,
+    load_extraction_artifact,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 BASELINE_SUMMARY = (
     PROJECT_ROOT
     / "experiments"
@@ -47,7 +49,6 @@ THRESHOLDS = (0.3, 0.4, 0.5, 0.6, 0.7)
 CHUNK_SIZE = 1000
 BATCH_SIZE = 32
 DEVICE = "cpu"
-PAGE_SEPARATOR = "\n"
 
 
 class CachedEmbeddingModel:
@@ -266,7 +267,7 @@ def _build_report(
 ## Scope and reproducibility
 
 This diagnostic uses `{baseline_summary['source_pdf_filename']}` with the existing
-page extraction and cleaner, joined in page order with a newline. The cleaned input
+the shared cleaned-text artifact, retaining page order and newline boundaries. The cleaned input
 contains {baseline_summary['total_cleaned_document_characters']:,} characters across
 {baseline_summary['number_of_pages_extracted']} extracted pages. The original
 semantic preview files were read for verification and were not modified.
@@ -396,8 +397,6 @@ Do not choose a threshold solely because it creates fewer chunks.
 
 
 def main() -> None:
-    if not SOURCE_PDF.is_file():
-        raise FileNotFoundError(f"Source PDF not found: {SOURCE_PDF}")
     if not BASELINE_SUMMARY.is_file() or not BASELINE_CHUNKS.is_file():
         raise FileNotFoundError(
             "The saved semantic preview summary and chunk metadata are required."
@@ -409,9 +408,8 @@ def main() -> None:
 
     baseline_summary = json.loads(BASELINE_SUMMARY.read_text(encoding="utf-8"))
     baseline_chunks = json.loads(BASELINE_CHUNKS.read_text(encoding="utf-8"))
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    cleaned_pages = [clean_text(page.text) for page in extraction.pages]
-    combined_text = PAGE_SEPARATOR.join(cleaned_pages)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    combined_text = document.text
     original_segments = segment_text(combined_text)
 
     model = load_sentence_model(DEFAULT_MODEL_NAME, DEVICE)

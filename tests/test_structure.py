@@ -4,11 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts import preview_structure
 from src.chunking.structure import StructureChunk, structure_chunk
+from src.ingestion.extraction_artifact import page_preserving_text
+from src.ingestion.pdf_loader import PdfPage
 
 
 class StructureChunkTests(unittest.TestCase):
@@ -730,13 +731,9 @@ class StructurePreviewTests(unittest.TestCase):
 
     def test_preview_rejects_invalid_max_chunk_size_before_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            source_pdf = Path(temporary_directory) / "manual.pdf"
-            source_pdf.touch()
-
             for invalid_size in (True, 0, -1, 1.5):
                 with self.subTest(max_chunk_size=invalid_size):
                     with (
-                        patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                         patch.object(
                             preview_structure,
                             "MAX_CHUNK_SIZE",
@@ -744,8 +741,8 @@ class StructurePreviewTests(unittest.TestCase):
                         ),
                         patch.object(
                             preview_structure,
-                            "extract_pdf_pages",
-                        ) as extract_pages,
+                            "load_extraction_artifact",
+                        ) as load_document,
                     ):
                         with self.assertRaisesRegex(
                             ValueError,
@@ -753,7 +750,7 @@ class StructurePreviewTests(unittest.TestCase):
                         ):
                             preview_structure.main()
 
-                    extract_pages.assert_not_called()
+                    load_document.assert_not_called()
 
     def test_chunk_metadata_consistency_is_validated(self) -> None:
         invalid_chunks = (
@@ -920,12 +917,10 @@ class StructurePreviewTests(unittest.TestCase):
     def test_preview_rejects_oversized_chunks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text="Experiment 1: Demo\nAim: Observe.\n")],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, "Experiment 1: Demo\nAim: Observe.\n"),),
             )
 
             oversized_text = "A" * 80
@@ -941,14 +936,12 @@ class StructurePreviewTests(unittest.TestCase):
             ]
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_structure, "clean_text", side_effect=lambda text: oversized_text),
                 patch.object(
                     preview_structure,
                     "structure_chunk",
@@ -962,23 +955,19 @@ class StructurePreviewTests(unittest.TestCase):
     def test_preview_rejects_empty_extracted_document(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text="\n\t\n")],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, "\n\t\n"),),
             )
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_structure, "clean_text", side_effect=lambda text: ""),
             ):
                 with self.assertRaisesRegex(
                     RuntimeError,
@@ -989,24 +978,20 @@ class StructurePreviewTests(unittest.TestCase):
     def test_preview_validates_exact_reconstruction_and_heading_counts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
             text = "Experiment 1: Demo\nAim: Measure output.\nResult: Stable.\n"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text=text)],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, text),),
             )
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_structure, "clean_text", side_effect=lambda value: value),
             ):
                 preview_structure.main()
 
@@ -1036,6 +1021,7 @@ class StructurePreviewTests(unittest.TestCase):
                     "section_path",
                     "heading_occurrence",
                     "character_count",
+                    "source_page_numbers",
                     "text",
                 },
             )
@@ -1044,6 +1030,8 @@ class StructurePreviewTests(unittest.TestCase):
                 ["Experiment 1: Demo"],
             )
             self.assertEqual(metadata[0]["heading_level"], 1)
+            self.assertEqual(metadata[0]["source_page_numbers"], [1])
+            self.assertTrue(summary["page_level_chunk_provenance_available"])
             self.assertEqual(summary["number_of_chunks"], 3)
             self.assertEqual(summary["number_of_unique_headings"], 3)
             self.assertEqual(summary["number_of_heading_occurrences"], 3)
@@ -1064,8 +1052,6 @@ class StructurePreviewTests(unittest.TestCase):
     def test_preview_counts_heading_occurrences_separately_from_split_chunks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
             text = (
                 "Experiment: 1\n"
@@ -1073,23 +1059,17 @@ class StructurePreviewTests(unittest.TestCase):
                 + ("Network details follow.\n" * 8)
                 + "Aim: Confirm the result.\n"
             )
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text=text)],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, text),),
             )
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                    return_value=extraction,
-                ),
-                patch.object(
-                    preview_structure,
-                    "clean_text",
-                    side_effect=lambda value: value,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
                 patch.object(preview_structure, "MAX_CHUNK_SIZE", 30),
             ):
@@ -1127,37 +1107,32 @@ class StructurePreviewTests(unittest.TestCase):
     def test_existing_outputs_are_not_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
             output_directory.mkdir()
             existing_file = output_directory / "summary.json"
             existing_file.write_text("keep this", encoding="utf-8")
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                ) as extract_pages,
+                    "load_extraction_artifact",
+                ) as load_document,
             ):
                 with self.assertRaises(FileExistsError):
                     preview_structure.main()
 
             self.assertEqual(existing_file.read_text(encoding="utf-8"), "keep this")
-            extract_pages.assert_not_called()
+            load_document.assert_not_called()
 
     def test_partial_output_is_cleaned_after_write_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "structure_preview"
             text = "Experiment 1: Demo\nAim: Measure output.\n"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text=text)],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, text),),
             )
             original_open = Path.open
 
@@ -1196,14 +1171,12 @@ class StructurePreviewTests(unittest.TestCase):
                 return original_open(path, *args, **kwargs)
 
             with (
-                patch.object(preview_structure, "SOURCE_PDF", source_pdf),
                 patch.object(preview_structure, "OUTPUT_DIRECTORY", output_directory),
                 patch.object(
                     preview_structure,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_structure, "clean_text", side_effect=lambda value: value),
                 patch.object(Path, "open", new=fail_summary_write),
             ):
                 with self.assertRaisesRegex(OSError, "simulated write failure"):

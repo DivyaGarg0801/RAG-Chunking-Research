@@ -7,7 +7,6 @@ import unittest
 from contextlib import redirect_stdout
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts import preview_logical
@@ -20,6 +19,7 @@ from src.chunking.logical import (
     logical_unit_chunk,
 )
 from src.ingestion.pdf_loader import PdfPage
+from src.ingestion.extraction_artifact import page_preserving_text
 
 
 class LogicalChunkTests(unittest.TestCase):
@@ -626,19 +626,22 @@ class LogicalPreviewTests(unittest.TestCase):
         output_directory: Path,
         selected_output_directory: Path | None = None,
     ) -> None:
-        source_pdf = output_directory.parent / "manual.pdf"
-        source_pdf.touch()
-        extracted = SimpleNamespace(
-            pages=(
+        artifact_path = output_directory.parent / "extracted_pages.json"
+        document = page_preserving_text(
+            "manual.pdf",
+            (
                 PdfPage("manual.pdf", 1, "Experiment 1: Ping\nAim: Check it.\n"),
                 PdfPage("manual.pdf", 2, "Experiment 2: DNS\nAim: Resolve it.\n"),
             ),
-            empty_pages=(),
         )
         with (
-            patch.object(preview_logical, "SOURCE_PDF", source_pdf),
+            patch.object(preview_logical, "EXTRACTION_ARTIFACT", artifact_path),
             patch.object(preview_logical, "OUTPUT_DIRECTORY", output_directory),
-            patch.object(preview_logical, "extract_pdf_pages", return_value=extracted),
+            patch.object(
+                preview_logical,
+                "load_extraction_artifact",
+                return_value=document,
+            ),
             redirect_stdout(io.StringIO()),
         ):
             preview_logical.main(selected_output_directory)

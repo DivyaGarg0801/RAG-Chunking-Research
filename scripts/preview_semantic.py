@@ -1,5 +1,6 @@
 """Run the local semantic chunking pipeline and save a reproducible preview."""
 
+import argparse
 import json
 import platform
 from importlib.metadata import PackageNotFoundError, version
@@ -11,12 +12,15 @@ from src.chunking.semantic import (
     load_sentence_model,
     semantic_chunk,
 )
-from src.ingestion.pdf_loader import extract_pdf_pages
-from src.preprocessing.text_cleaner import clean_text
+from src.ingestion.extraction_artifact import (
+    DEFAULT_ARTIFACT_PATH,
+    PagePreservingText,
+    load_extraction_artifact,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 OUTPUT_DIRECTORY = PROJECT_ROOT / "experiments" / "results" / "semantic_preview"
 
 MODEL_NAME = DEFAULT_MODEL_NAME
@@ -50,20 +54,18 @@ def _runtime_versions() -> dict[str, str]:
 
 def _build_summary(
     result: SemanticChunkingResult,
-    combined_text: str,
-    page_count: int,
-    empty_pages: tuple[int, ...],
+    document: PagePreservingText,
     model: object | None,
 ) -> dict[str, object]:
     """Build the run configuration and derived chunk statistics."""
     lengths = [chunk.character_count for chunk in result.chunks]
     resolved_revision = _resolved_model_revision(model)
     return {
-        "source_pdf_filename": SOURCE_PDF.name,
-        "number_of_pages_extracted": page_count,
-        "number_of_empty_pages": len(empty_pages),
-        "empty_page_numbers": list(empty_pages),
-        "total_cleaned_document_characters": len(combined_text),
+        "source_pdf_filename": document.source_document,
+        "number_of_pages_extracted": len(document.pages),
+        "number_of_empty_pages": len(document.empty_pages),
+        "empty_page_numbers": list(document.empty_pages),
+        "total_cleaned_document_characters": len(document.text),
         "page_separator": PAGE_SEPARATOR,
         "chunking": {
             "strategy": result.metadata.strategy_name,
@@ -109,7 +111,7 @@ def _build_summary(
         },
         "chunking_time_seconds": result.metadata.execution_time_seconds,
         "chunks_may_cross_page_boundaries": True,
-        "page_level_chunk_provenance_available": False,
+        "page_level_chunk_provenance_available": True,
     }
 
 
@@ -127,15 +129,15 @@ def _resolved_model_revision(model: object | None) -> str | None:
     return revision if isinstance(revision, str) and revision else None
 
 
-def main() -> None:
-    """Extract, clean, semantically chunk, and save the local PDF preview."""
-    if not SOURCE_PDF.is_file():
-        raise FileNotFoundError(f"Source PDF does not exist: {SOURCE_PDF}")
-
+def main(output_directory: Path | None = None) -> None:
+    """Load, semantically chunk, and save the shared source artifact."""
+    selected_output_directory = (
+        OUTPUT_DIRECTORY if output_directory is None else Path(output_directory)
+    )
     output_paths = (
-        OUTPUT_DIRECTORY / "chunks.txt",
-        OUTPUT_DIRECTORY / "summary.json",
-        OUTPUT_DIRECTORY / "chunk_metadata.json",
+        selected_output_directory / "chunks.txt",
+        selected_output_directory / "summary.json",
+        selected_output_directory / "chunk_metadata.json",
     )
     existing_outputs = [path for path in output_paths if path.exists()]
     if existing_outputs:
@@ -144,9 +146,8 @@ def main() -> None:
             f"Preview output already exists and will not be overwritten: {paths}"
         )
 
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    cleaned_page_texts = [clean_text(page.text) for page in extraction.pages]
-    combined_text = PAGE_SEPARATOR.join(cleaned_page_texts)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    combined_text = document.text
     model = (
         load_sentence_model(MODEL_NAME, DEVICE, revision=MODEL_REVISION)
         if combined_text.strip()
@@ -167,11 +168,12 @@ def main() -> None:
     if any(chunk.character_count > MAX_CHUNK_SIZE for chunk in result.chunks):
         raise RuntimeError("A generated chunk exceeds the configured size limit.")
 
+    page_numbers = document.page_numbers_for_chunks(
+        [chunk.text for chunk in result.chunks]
+    )
     summary = _build_summary(
         result,
-        combined_text,
-        len(extraction.pages),
-        tuple(extraction.empty_pages),
+        document,
         model,
     )
     chunk_metadata = [
@@ -179,9 +181,10 @@ def main() -> None:
             "chunk_index": chunk.chunk_index,
             "character_count": chunk.character_count,
             "boundary_before": chunk.boundary_before,
+            "source_page_numbers": list(page_numbers[index]),
             "text": chunk.text,
         }
-        for chunk in result.chunks
+        for index, chunk in enumerate(result.chunks)
     ]
     chunks_text = "\n\n".join(
         f"CHUNK {chunk.chunk_index} "
@@ -190,7 +193,7 @@ def main() -> None:
         for chunk in result.chunks
     )
 
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    selected_output_directory.mkdir(parents=True, exist_ok=True)
     output_contents = (
         (output_paths[0], chunks_text),
         (output_paths[1], json.dumps(summary, indent=2, ensure_ascii=False) + "\n"),
@@ -219,15 +222,30 @@ def main() -> None:
             ) from write_error
         raise
 
-    print(f"Pages extracted: {len(extraction.pages)}")
-    if extraction.empty_pages:
-        print(f"Pages with no extractable text: {list(extraction.empty_pages)}")
+    print(f"Pages loaded: {len(document.pages)}")
+    if document.empty_pages:
+        print(f"Pages with no cleaned text: {list(document.empty_pages)}")
     else:
         print("Pages with no extractable text: none")
     print(f"Chunks created: {len(result.chunks)}")
     print(f"Average chunk length: {summary['average_chunk_length_characters']:.2f}")
-    print(f"Output directory: {OUTPUT_DIRECTORY}")
+    print(f"Output directory: {selected_output_directory}")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a semantic preview from the shared text artifact."
+    )
+    parser.add_argument(
+        "--output-directory",
+        type=Path,
+        help=(
+            "Use a fresh output directory instead of the default "
+            "experiments/results/semantic_preview path."
+        ),
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
+    main(_parse_args().output_directory)

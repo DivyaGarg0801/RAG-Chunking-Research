@@ -2,16 +2,16 @@
 
 import json
 import statistics
-from pathlib import Path
 
 from src.chunking.semantic import segment_text
 from src.chunking.semantic_segmentation import segment_text_paragraph_aware
-from src.ingestion.pdf_loader import extract_pdf_pages
-from src.preprocessing.text_cleaner import clean_text
+from src.ingestion.extraction_artifact import (
+    DEFAULT_ARTIFACT_PATH,
+    load_extraction_artifact,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 
 EXAMPLE_PHRASES = (
     "Experiment-1",
@@ -26,16 +26,6 @@ EXAMPLE_PHRASES = (
     "routed.",
     "Multiple packets sent",
 )
-
-
-def _page_break_offsets(page_texts: list[str]) -> tuple[int, ...]:
-    offsets: list[int] = []
-    current_offset = 0
-    for page_text in page_texts[:-1]:
-        current_offset += len(page_text)
-        offsets.append(current_offset)
-        current_offset += 1
-    return tuple(offsets)
 
 
 def _statistics(segments: list[str]) -> dict[str, int | float]:
@@ -66,13 +56,12 @@ def _examples(
 
 
 def main() -> None:
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    page_texts = [clean_text(page.text) for page in extraction.pages]
-    source_text = "\n".join(page_texts)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    source_text = document.text
     current_segments = segment_text(source_text)
     paragraph_segments = segment_text_paragraph_aware(
         source_text,
-        page_break_offsets=_page_break_offsets(page_texts),
+        page_break_offsets=document.page_break_offsets,
     )
 
     if "".join(current_segments) != source_text:
@@ -82,8 +71,8 @@ def main() -> None:
 
     result = {
         "source": {
-            "filename": SOURCE_PDF.name,
-            "page_count": len(page_texts),
+            "filename": document.source_document,
+            "page_count": len(document.pages),
             "cleaned_character_count": len(source_text),
             "page_separator": "\n",
         },

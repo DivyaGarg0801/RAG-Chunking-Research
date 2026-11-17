@@ -11,6 +11,8 @@ from unittest.mock import patch
 import numpy as np
 
 from scripts import preview_semantic
+from src.ingestion.extraction_artifact import page_preserving_text
+from src.ingestion.pdf_loader import PdfPage
 
 
 class FakeEmbeddingModel:
@@ -49,25 +51,28 @@ class SemanticPreviewTests(unittest.TestCase):
     def test_synthetic_pipeline_writes_chunks_and_summary_without_real_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
+            artifact_path = root / "extracted_pages.json"
             output_directory = root / "semantic_preview"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text="Aim: First sentence. Second sentence.")],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (
+                    PdfPage("manual.pdf", 1, "Aim: First sentence."),
+                    PdfPage("manual.pdf", 2, "Second sentence."),
+                ),
             )
 
             with (
-                patch.object(preview_semantic, "SOURCE_PDF", source_pdf),
+                patch.object(
+                    preview_semantic, "EXTRACTION_ARTIFACT", artifact_path
+                ),
                 patch.object(
                     preview_semantic, "OUTPUT_DIRECTORY", output_directory
                 ),
                 patch.object(
                     preview_semantic,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_semantic, "clean_text", side_effect=lambda text: text),
                 patch.object(
                     preview_semantic,
                     "load_sentence_model",
@@ -97,10 +102,10 @@ class SemanticPreviewTests(unittest.TestCase):
             summary = json.loads(
                 (output_directory / "summary.json").read_text(encoding="utf-8")
             )
-            expected_text = "Aim: First sentence. Second sentence."
+            expected_text = "Aim: First sentence.\nSecond sentence."
 
             self.assertEqual("".join(chunk["text"] for chunk in chunks), expected_text)
-            self.assertEqual(summary["number_of_pages_extracted"], 1)
+            self.assertEqual(summary["number_of_pages_extracted"], 2)
             self.assertEqual(summary["number_of_original_segments"], 2)
             self.assertEqual(summary["number_of_embedding_inputs"], 2)
             self.assertEqual(summary["number_of_chunks"], len(chunks))
@@ -109,7 +114,9 @@ class SemanticPreviewTests(unittest.TestCase):
                 max(len(chunk["text"]) for chunk in chunks),
             )
             self.assertTrue(summary["chunks_may_cross_page_boundaries"])
-            self.assertFalse(summary["page_level_chunk_provenance_available"])
+            self.assertTrue(summary["page_level_chunk_provenance_available"])
+            self.assertIn(1, chunks[0]["source_page_numbers"])
+            self.assertIn(2, chunks[-1]["source_page_numbers"])
             self.assertEqual(summary["chunking"]["runtime_versions"], {"python": "test"})
             self.assertEqual(
                 summary["chunking"]["requested_model_revision"],
@@ -120,25 +127,25 @@ class SemanticPreviewTests(unittest.TestCase):
     def test_whitespace_only_input_does_not_load_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
+            artifact_path = root / "extracted_pages.json"
             output_directory = root / "semantic_preview"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text=" \n\t ")],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, " \n\t "),),
             )
 
             with (
-                patch.object(preview_semantic, "SOURCE_PDF", source_pdf),
+                patch.object(
+                    preview_semantic, "EXTRACTION_ARTIFACT", artifact_path
+                ),
                 patch.object(
                     preview_semantic, "OUTPUT_DIRECTORY", output_directory
                 ),
                 patch.object(
                     preview_semantic,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_semantic, "clean_text", side_effect=lambda text: text),
                 patch.object(
                     preview_semantic,
                     "load_sentence_model",
@@ -162,12 +169,11 @@ class SemanticPreviewTests(unittest.TestCase):
     def test_partial_output_files_are_removed_when_writing_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
+            artifact_path = root / "extracted_pages.json"
             output_directory = root / "semantic_preview"
-            extraction = SimpleNamespace(
-                pages=[SimpleNamespace(text="One sentence.")],
-                empty_pages=(),
+            document = page_preserving_text(
+                "manual.pdf",
+                (PdfPage("manual.pdf", 1, "One sentence."),),
             )
             original_open = Path.open
 
@@ -206,16 +212,17 @@ class SemanticPreviewTests(unittest.TestCase):
                 return original_open(path, *args, **kwargs)
 
             with (
-                patch.object(preview_semantic, "SOURCE_PDF", source_pdf),
+                patch.object(
+                    preview_semantic, "EXTRACTION_ARTIFACT", artifact_path
+                ),
                 patch.object(
                     preview_semantic, "OUTPUT_DIRECTORY", output_directory
                 ),
                 patch.object(
                     preview_semantic,
-                    "extract_pdf_pages",
-                    return_value=extraction,
+                    "load_extraction_artifact",
+                    return_value=document,
                 ),
-                patch.object(preview_semantic, "clean_text", side_effect=lambda text: text),
                 patch.object(
                     preview_semantic,
                     "load_sentence_model",
@@ -251,38 +258,36 @@ class SemanticPreviewTests(unittest.TestCase):
     def test_existing_outputs_are_not_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            source_pdf = root / "manual.pdf"
-            source_pdf.touch()
             output_directory = root / "semantic_preview"
             output_directory.mkdir()
             existing_file = output_directory / "summary.json"
             existing_file.write_text("keep this", encoding="utf-8")
 
             with (
-                patch.object(preview_semantic, "SOURCE_PDF", source_pdf),
                 patch.object(
                     preview_semantic, "OUTPUT_DIRECTORY", output_directory
                 ),
-                patch.object(preview_semantic, "extract_pdf_pages") as extract_pages,
+                patch.object(
+                    preview_semantic, "load_extraction_artifact"
+                ) as load_document,
             ):
                 with self.assertRaises(FileExistsError):
                     preview_semantic.main()
 
             self.assertEqual(existing_file.read_text(encoding="utf-8"), "keep this")
-            extract_pages.assert_not_called()
+            load_document.assert_not_called()
 
-    def test_missing_source_pdf_is_reported_before_processing(self) -> None:
+    def test_missing_artifact_is_reported_before_processing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            missing_pdf = Path(temporary_directory) / "missing.pdf"
+            missing_artifact = Path(temporary_directory) / "missing.json"
 
             with (
-                patch.object(preview_semantic, "SOURCE_PDF", missing_pdf),
-                patch.object(preview_semantic, "extract_pdf_pages") as extract_pages,
+                patch.object(
+                    preview_semantic, "EXTRACTION_ARTIFACT", missing_artifact
+                ),
             ):
                 with self.assertRaises(FileNotFoundError):
                     preview_semantic.main()
-
-            extract_pages.assert_not_called()
 
 
 if __name__ == "__main__":

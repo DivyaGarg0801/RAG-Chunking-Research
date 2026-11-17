@@ -15,11 +15,12 @@ from src.chunking.logical import (  # noqa: E402
     _validate_chunks as _validate_logical_chunks,
     logical_unit_chunk,
 )
-from src.ingestion.pdf_loader import extract_pdf_pages  # noqa: E402
-from src.preprocessing.text_cleaner import clean_text  # noqa: E402
+from src.ingestion.extraction_artifact import (  # noqa: E402
+    DEFAULT_ARTIFACT_PATH,
+    load_extraction_artifact,
+)
 
-
-SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 OUTPUT_DIRECTORY = PROJECT_ROOT / "experiments" / "results" / "logical_preview"
 MAX_CHUNK_SIZE = DEFAULT_MAX_CHUNK_SIZE
 PAGE_SEPARATOR = "\n"
@@ -116,17 +117,14 @@ def main(output_directory: Path | None = None) -> None:
         or MAX_CHUNK_SIZE <= 0
     ):
         raise ValueError("MAX_CHUNK_SIZE must be a positive integer.")
-    if not SOURCE_PDF.is_file():
-        raise FileNotFoundError(f"Source PDF does not exist: {SOURCE_PDF}")
     if selected_output_directory.exists():
         raise FileExistsError(
             "Logical preview output directory already exists and will not be "
             f"overwritten: {selected_output_directory}"
         )
 
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    cleaned_pages = [clean_text(page.text) for page in extraction.pages]
-    combined_text = PAGE_SEPARATOR.join(cleaned_pages)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    combined_text = document.text
     if not combined_text.strip():
         raise RuntimeError(
             "No usable text was extracted after cleaning; the preview cannot proceed."
@@ -135,15 +133,15 @@ def main(output_directory: Path | None = None) -> None:
     chunks = logical_unit_chunk(
         combined_text,
         max_chunk_size=MAX_CHUNK_SIZE,
-        page_break_offsets=_page_break_offsets(cleaned_pages),
-        source_document=SOURCE_PDF.name,
+        page_break_offsets=document.page_break_offsets,
+        source_document=document.source_document,
     )
     _validate_chunks(
         chunks,
         combined_text,
         MAX_CHUNK_SIZE,
-        source_document=SOURCE_PDF.name,
-        page_count=len(extraction.pages),
+        source_document=document.source_document,
+        page_count=len(document.pages),
     )
 
     unit_chunks: dict[str, list[LogicalChunk]] = {}
@@ -188,10 +186,10 @@ def main(output_directory: Path | None = None) -> None:
     split_unit_count = sum(parts[0].is_split for parts in unit_chunks.values())
     summary = {
         "chunking_strategy": "logical_unit",
-        "source_pdf_filename": SOURCE_PDF.name,
-        "number_of_pages_extracted": len(extraction.pages),
-        "number_of_empty_pages": len(extraction.empty_pages),
-        "empty_page_numbers": list(extraction.empty_pages),
+        "source_pdf_filename": document.source_document,
+        "number_of_pages_extracted": len(document.pages),
+        "number_of_empty_pages": len(document.empty_pages),
+        "empty_page_numbers": list(document.empty_pages),
         "document_characters_after_cleaning": len(combined_text),
         "page_separator": PAGE_SEPARATOR,
         "maximum_chunk_size_characters": MAX_CHUNK_SIZE,
@@ -267,9 +265,9 @@ def main(output_directory: Path | None = None) -> None:
         )
     )
 
-    print(f"Pages extracted: {len(extraction.pages)}")
-    if extraction.empty_pages:
-        print(f"Empty pages: {list(extraction.empty_pages)}")
+    print(f"Pages loaded: {len(document.pages)}")
+    if document.empty_pages:
+        print(f"Empty pages: {list(document.empty_pages)}")
     else:
         print("Empty pages: none")
     print(f"Logical units created: {len(unit_chunks)}")

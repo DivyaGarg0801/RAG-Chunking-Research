@@ -1,5 +1,6 @@
 """Run the structure-aware preview on the local laboratory manual."""
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -9,10 +10,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.chunking.structure import StructureChunk, _detect_heading, structure_chunk
-from src.ingestion.pdf_loader import extract_pdf_pages
-from src.preprocessing.text_cleaner import clean_text
+from src.ingestion.extraction_artifact import (
+    DEFAULT_ARTIFACT_PATH,
+    load_extraction_artifact,
+)
 
-SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 OUTPUT_DIRECTORY = (
     PROJECT_ROOT
     / "experiments"
@@ -163,8 +166,11 @@ def _validate_chunks(
             )
 
 
-def main() -> None:
+def main(output_directory: Path | None = None) -> None:
     """Create a structure-based preview and save chunk metadata and summary."""
+    selected_output_directory = (
+        OUTPUT_DIRECTORY if output_directory is None else Path(output_directory)
+    )
     if (
         not isinstance(MAX_CHUNK_SIZE, int)
         or isinstance(MAX_CHUNK_SIZE, bool)
@@ -172,13 +178,10 @@ def main() -> None:
     ):
         raise ValueError("MAX_CHUNK_SIZE must be a positive integer.")
 
-    if not SOURCE_PDF.is_file():
-        raise FileNotFoundError(f"Source PDF does not exist: {SOURCE_PDF}")
-
     output_paths = (
-        OUTPUT_DIRECTORY / "chunks.txt",
-        OUTPUT_DIRECTORY / "summary.json",
-        OUTPUT_DIRECTORY / "chunk_metadata.json",
+        selected_output_directory / "chunks.txt",
+        selected_output_directory / "summary.json",
+        selected_output_directory / "chunk_metadata.json",
     )
     existing_outputs = [path for path in output_paths if path.exists()]
     if existing_outputs:
@@ -187,9 +190,8 @@ def main() -> None:
             + ", ".join(str(path) for path in existing_outputs)
         )
 
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    cleaned_pages = [clean_text(page.text) for page in extraction.pages]
-    combined_text = PAGE_SEPARATOR.join(cleaned_pages)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    combined_text = document.text
 
     if not combined_text.strip():
         raise RuntimeError(
@@ -198,6 +200,9 @@ def main() -> None:
 
     chunks = structure_chunk(combined_text, max_chunk_size=MAX_CHUNK_SIZE)
     _validate_chunks(chunks, combined_text, MAX_CHUNK_SIZE)
+    page_numbers = document.page_numbers_for_chunks(
+        [chunk.text for chunk in chunks]
+    )
 
     chunk_counts_by_heading: dict[str, int] = {}
     heading_by_occurrence: dict[int, str] = {}
@@ -248,10 +253,10 @@ def main() -> None:
             break
 
     summary = {
-        "source_pdf_filename": SOURCE_PDF.name,
-        "number_of_pages_extracted": len(extraction.pages),
-        "number_of_empty_pages": len(extraction.empty_pages),
-        "empty_page_numbers": list(extraction.empty_pages),
+        "source_pdf_filename": document.source_document,
+        "number_of_pages_extracted": len(document.pages),
+        "number_of_empty_pages": len(document.empty_pages),
+        "empty_page_numbers": list(document.empty_pages),
         "document_characters_after_cleaning": len(combined_text),
         "structure_heading_detection": "conservative_line_based",
         "maximum_chunk_size_characters": MAX_CHUNK_SIZE,
@@ -278,6 +283,7 @@ def main() -> None:
         "chunk_count_by_heading": chunk_counts_by_heading,
         "text_preserved_exactly": True,
         "page_separator": PAGE_SEPARATOR,
+        "page_level_chunk_provenance_available": True,
     }
 
     chunk_metadata = [
@@ -289,6 +295,7 @@ def main() -> None:
             "section_path": list(chunk.section_path),
             "heading_occurrence": chunk.heading_occurrence,
             "character_count": len(chunk.text),
+            "source_page_numbers": list(page_numbers[chunk.chunk_index - 1]),
             "text": chunk.text,
         }
         for chunk in chunks
@@ -299,7 +306,7 @@ def main() -> None:
         for chunk in chunks
     )
 
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    selected_output_directory.mkdir(parents=True, exist_ok=True)
     output_contents = (
         (output_paths[0], chunks_text),
         (output_paths[1], json.dumps(summary, indent=2, ensure_ascii=False) + "\n"),
@@ -325,9 +332,9 @@ def main() -> None:
             ) from write_error
         raise
 
-    print(f"Pages extracted: {len(extraction.pages)}")
-    if extraction.empty_pages:
-        print(f"Empty pages: {list(extraction.empty_pages)}")
+    print(f"Pages loaded: {len(document.pages)}")
+    if document.empty_pages:
+        print(f"Empty pages: {list(document.empty_pages)}")
     else:
         print("Empty pages: none")
     print(f"Structure chunks created: {len(chunks)}")
@@ -335,8 +342,23 @@ def main() -> None:
     print(f"Heading occurrences: {summary['number_of_heading_occurrences']}")
     print(f"Unheaded chunks: {unheaded_chunk_count}")
     print(f"Average chunk length: {summary['average_chunk_length_characters']:.2f}")
-    print(f"Output directory: {OUTPUT_DIRECTORY}")
+    print(f"Output directory: {selected_output_directory}")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a structure-based preview from the shared text artifact."
+    )
+    parser.add_argument(
+        "--output-directory",
+        type=Path,
+        help=(
+            "Use a fresh output directory instead of the default "
+            "experiments/results/structure_based_preview_v2_corrected path."
+        ),
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
+    main(_parse_args().output_directory)

@@ -20,8 +20,11 @@ from src.chunking.semantic import (
     semantic_chunk,
 )
 from src.chunking.semantic_segmentation import segment_text_paragraph_aware
-from src.ingestion.pdf_loader import extract_pdf_pages
-from src.preprocessing.text_cleaner import clean_text
+from src.ingestion.extraction_artifact import (
+    DEFAULT_ARTIFACT_PATH,
+    PagePreservingText,
+    load_extraction_artifact,
+)
 from scripts.preview_semantic import (
     _resolved_model_revision,
     _runtime_versions,
@@ -37,6 +40,7 @@ from scripts.preview_semantic import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PDF = PROJECT_ROOT / "data" / "raw" / "computer_networks_lab_manual.pdf"
+EXTRACTION_ARTIFACT = DEFAULT_ARTIFACT_PATH
 OUTPUT_DIRECTORY = (
     PROJECT_ROOT
     / "experiments"
@@ -276,10 +280,14 @@ def _write_outputs(
     results: dict[str, SemanticChunkingResult],
     comparison: dict[str, Any],
     output_directory: Path,
+    document: PagePreservingText,
 ) -> None:
     output_files: list[tuple[Path, str]] = []
     for variant, result in results.items():
         variant_directory = output_directory / variant
+        page_numbers = document.page_numbers_for_chunks(
+            [chunk.text for chunk in result.chunks]
+        )
         variant_summary = {
             "generated_at_utc": comparison["generated_at_utc"],
             "source": comparison["source"],
@@ -294,6 +302,7 @@ def _write_outputs(
             "all_chunks_within_maximum_size": comparison["variants"][variant][
                 "all_chunks_within_maximum_size"
             ],
+            "page_level_provenance_available": True,
         }
         output_files.extend(
             [
@@ -323,9 +332,10 @@ def _write_outputs(
                                 "chunk_index": chunk.chunk_index,
                                 "character_count": chunk.character_count,
                                 "boundary_before": chunk.boundary_before,
+                                "source_page_numbers": list(page_numbers[index]),
                                 "text": chunk.text,
                             }
-                            for chunk in result.chunks
+                            for index, chunk in enumerate(result.chunks)
                         ],
                         indent=2,
                         ensure_ascii=False,
@@ -380,11 +390,10 @@ def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
         )
     baseline = _baseline_state()
     preparation_started = time.perf_counter()
-    extraction = extract_pdf_pages(SOURCE_PDF)
-    cleaned_pages = [clean_text(page.text) for page in extraction.pages]
-    source_text = PAGE_SEPARATOR.join(cleaned_pages)
+    document = load_extraction_artifact(EXTRACTION_ARTIFACT)
+    source_text = document.text
     source_preparation_seconds = time.perf_counter() - preparation_started
-    if len(source_text) != 78_531 or len(cleaned_pages) != 87:
+    if len(source_text) != 78_531 or len(document.pages) != 87:
         raise RuntimeError(
             "The extracted/cleaned source differs from the expected 87-page, "
             "78,531-character input."
@@ -395,16 +404,10 @@ def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
     original_segmentation_seconds = (
         time.perf_counter() - original_segment_started
     )
-    page_offsets: list[int] = []
-    offset = 0
-    for page_text in cleaned_pages[:-1]:
-        offset += len(page_text)
-        page_offsets.append(offset)
-        offset += len(PAGE_SEPARATOR)
     paragraph_segmentation_started = time.perf_counter()
     paragraph_segments = segment_text_paragraph_aware(
         source_text,
-        page_break_offsets=tuple(page_offsets),
+        page_break_offsets=document.page_break_offsets,
     )
     paragraph_segmentation_seconds = (
         time.perf_counter() - paragraph_segmentation_started
@@ -470,11 +473,11 @@ def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
     comparison: dict[str, Any] = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "source": {
-            "pdf_filename": SOURCE_PDF.name,
+            "pdf_filename": document.source_document,
             "pdf_sha256": _sha256(SOURCE_PDF),
-            "page_count": len(cleaned_pages),
+            "page_count": len(document.pages),
             "cleaned_character_count": len(source_text),
-            "empty_page_numbers": list(extraction.empty_pages),
+            "empty_page_numbers": list(document.empty_pages),
             "page_separator": PAGE_SEPARATOR,
         },
         "configuration": {
@@ -501,7 +504,7 @@ def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
         },
         "timing_definitions": {
             "source_preparation_seconds": (
-                "Shared PDF extraction and cleaning duration."
+                "Shared loading duration for the cleaned extraction artifact."
             ),
             "model_load_seconds": (
                 "One-time local model load, reported separately and excluded "
@@ -545,7 +548,7 @@ def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
             },
         },
     }
-    _write_outputs(results, comparison, output_directory)
+    _write_outputs(results, comparison, output_directory, document)
     print("| Variant | Input segments | Embedding inputs | Chunks | Avg chars | Min–max | <=10 | <=20 | <=50 |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for variant, stats in statistics_by_variant.items():
