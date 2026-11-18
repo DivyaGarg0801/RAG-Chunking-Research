@@ -38,5 +38,5 @@ Desktop.ini
 data/raw/computer_networks_lab_manual.pdf
 data
 
-# Ignore entire experiments folder
-experiments/
+# Generated experimental outputs
+experiments/results/
