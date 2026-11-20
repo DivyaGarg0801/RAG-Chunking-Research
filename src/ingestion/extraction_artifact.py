@@ -1,3 +1,4 @@
+
 """Create and load reusable, page-preserving cleaned-text artifacts."""
 
 import json
@@ -31,6 +32,15 @@ class PageSpan:
 
 
 @dataclass(frozen=True)
+class ChunkSpan:
+    """Character offsets and source pages occupied by one chunk."""
+
+    start_offset: int
+    end_offset: int
+    source_page_numbers: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class PagePreservingText:
     """Joined chunker input alongside the page records and their offsets."""
 
@@ -60,12 +70,12 @@ class PagePreservingText:
             if span.start_offset < end and span.end_offset > start
         )
 
-    def page_numbers_for_chunks(
+    def chunk_spans_for_chunks(
         self,
         chunks: Sequence[str],
         overlap_lengths: Sequence[int] | None = None,
-    ) -> tuple[tuple[int, ...], ...]:
-        """Map ordered, source-preserving chunks to their source pages.
+    ) -> tuple[ChunkSpan, ...]:
+        """Map ordered, source-preserving chunks to exact source character spans.
 
         ``overlap_lengths`` contains the repeated prefix length for each chunk.
         It is useful for chunkers that intentionally repeat text between chunks.
@@ -78,10 +88,12 @@ class PagePreservingText:
                 raise ValueError("Each chunk must have one overlap length.")
 
         source_end = 0
-        page_numbers: list[tuple[int, ...]] = []
+        chunk_spans: list[ChunkSpan] = []
+
         for index, (chunk, overlap) in enumerate(zip(chunks, overlaps)):
             if not isinstance(chunk, str):
                 raise TypeError("Each chunk must be a string.")
+
             if (
                 not isinstance(overlap, int)
                 or isinstance(overlap, bool)
@@ -93,16 +105,41 @@ class PagePreservingText:
 
             start = source_end - overlap
             end = start + len(chunk)
+
             if end > len(self.text) or self.text[start:end] != chunk:
                 raise ValueError(
                     "Chunks do not match the ordered source text and overlaps."
                 )
-            page_numbers.append(self.page_numbers_for_range(start, end))
+
+            chunk_spans.append(
+                ChunkSpan(
+                    start_offset=start,
+                    end_offset=end,
+                    source_page_numbers=self.page_numbers_for_range(start, end),
+                )
+            )
+
             source_end = end
 
         if source_end != len(self.text):
             raise ValueError("Chunks do not cover the complete source text.")
-        return tuple(page_numbers)
+
+        return tuple(chunk_spans)
+
+    def page_numbers_for_chunks(
+        self,
+        chunks: Sequence[str],
+        overlap_lengths: Sequence[int] | None = None,
+    ) -> tuple[tuple[int, ...], ...]:
+        """Map ordered, source-preserving chunks to their source pages.
+
+        ``overlap_lengths`` contains the repeated prefix length for each chunk.
+        It is useful for chunkers that intentionally repeat text between chunks.
+        """
+        return tuple(
+            span.source_page_numbers
+            for span in self.chunk_spans_for_chunks(chunks, overlap_lengths)
+        )
 
 
 def page_preserving_text(
@@ -111,17 +148,21 @@ def page_preserving_text(
 ) -> PagePreservingText:
     """Build the existing newline-joined input without discarding page offsets."""
     page_records = tuple(pages)
+
     if not isinstance(source_document, str) or not source_document.strip():
         raise ValueError("source_document must be a non-empty string.")
 
     page_spans: list[PageSpan] = []
     page_break_offsets: list[int] = []
     position = 0
+
     for index, page in enumerate(page_records):
         if page.page_number != index + 1:
             raise ValueError("Page numbers must be consecutive and start at one.")
+
         start = position
         position += len(page.text)
+
         page_spans.append(
             PageSpan(
                 page_number=page.page_number,
@@ -129,6 +170,7 @@ def page_preserving_text(
                 end_offset=position,
             )
         )
+
         if index < len(page_records) - 1:
             page_break_offsets.append(position)
             position += len(PAGE_SEPARATOR)
@@ -158,12 +200,14 @@ def create_extraction_artifact(
     """
     source_path = Path(pdf_path)
     destination = Path(artifact_path)
+
     if destination.exists() and not overwrite:
         raise FileExistsError(
             f"Extraction artifact already exists and was not changed: {destination}"
         )
 
     extraction = extract_pdf_pages(source_path)
+
     cleaned_pages = tuple(
         PdfPage(
             source_filename=source_path.name,
@@ -172,7 +216,9 @@ def create_extraction_artifact(
         )
         for page in extraction.pages
     )
+
     document = page_preserving_text(source_path.name, cleaned_pages)
+
     payload = {
         "source_document": document.source_document,
         "pages": [
@@ -180,11 +226,14 @@ def create_extraction_artifact(
             for page in document.pages
         ],
     }
+
     serialized = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
     destination.parent.mkdir(parents=True, exist_ok=True)
+
     if overwrite:
         temporary_path: Path | None = None
+
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -197,10 +246,13 @@ def create_extraction_artifact(
             ) as output_file:
                 temporary_path = Path(output_file.name)
                 output_file.write(serialized)
+
             os.replace(temporary_path, destination)
+
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
+
     else:
         with destination.open("x", encoding="utf-8", newline="\n") as output_file:
             output_file.write(serialized)
@@ -211,6 +263,7 @@ def create_extraction_artifact(
 def load_extraction_artifact(artifact_path: str | Path) -> PagePreservingText:
     """Load and validate a page-preserving extraction JSON artifact."""
     path = Path(artifact_path)
+
     if not path.is_file():
         raise FileNotFoundError(f"Extraction artifact does not exist: {path}")
 
@@ -223,21 +276,27 @@ def load_extraction_artifact(artifact_path: str | Path) -> PagePreservingText:
 
     if not isinstance(payload, dict):
         raise ValueError("Extraction artifact root must be a JSON object.")
+
     source_document = payload.get("source_document")
     raw_pages = payload.get("pages")
+
     if not isinstance(source_document, str) or not source_document.strip():
         raise ValueError(
             "Extraction artifact source_document must be a non-empty string."
         )
+
     if not isinstance(raw_pages, list):
         raise ValueError("Extraction artifact pages must be a JSON array.")
 
     pages: list[PdfPage] = []
+
     for expected_number, raw_page in enumerate(raw_pages, start=1):
         if not isinstance(raw_page, dict):
             raise ValueError(f"Page {expected_number} must be a JSON object.")
+
         page_number = raw_page.get("page_number")
         text = raw_page.get("text")
+
         if (
             not isinstance(page_number, int)
             or isinstance(page_number, bool)
@@ -246,8 +305,10 @@ def load_extraction_artifact(artifact_path: str | Path) -> PagePreservingText:
             raise ValueError(
                 "Artifact page numbers must be consecutive, one-based integers."
             )
+
         if not isinstance(text, str):
             raise ValueError(f"Page {expected_number} text must be a string.")
+
         pages.append(
             PdfPage(
                 source_filename=source_document,
@@ -257,5 +318,3 @@ def load_extraction_artifact(artifact_path: str | Path) -> PagePreservingText:
         )
 
     return page_preserving_text(source_document, pages)
-
-

@@ -1,4 +1,4 @@
-
+import argparse
 import json
 import math
 from pathlib import Path
@@ -22,15 +22,31 @@ WINDOW_DIR = (
     / "window_embeddings" / RUN_ID
 )
 
-CHUNK_FILE = CHUNK_DIR / "fixed_size_chunks.json"
-WINDOW_FILE = WINDOW_DIR / "fixed_size_windows.jsonl"
+STRATEGIES = [
+    "fixed_size",
+    "recursive",
+    "semantic",
+    "structure",
+    "logical_unit",
+]
 
 WINDOW_SIZE = 250
 OVERLAP = 30
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "strategy",
+        choices=STRATEGIES,
+        help="Chunking strategy to audit"
+    )
+    args = parser.parse_args()
 
+    strategy = args.strategy
+
+    CHUNK_FILE = CHUNK_DIR / f"{strategy}_chunks.json"
+    WINDOW_FILE = WINDOW_DIR / f"{strategy}_windows.jsonl"
     print("Loading tokenizer...")
 
     model = SentenceTransformer(MODEL_NAME)
